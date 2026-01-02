@@ -5,7 +5,10 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Vite uses import.meta.env. VITE_ prefix is standard.
+    // @ts-ignore
+    const apiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || (process.env.API_KEY as string) || '';
+    this.ai = new GoogleGenAI({ apiKey });
   }
 
   async getReadingInsight(passage: string, theme: string) {
