@@ -21,24 +21,6 @@ export const MOCK_USER: User = {
   lastReading: 'Salmos 119:1-88'
 };
 
-export const MOCK_READING: ReadingDay = {
-  day: 45,
-  date: 'Quarta-feira, 14 de Fevereiro',
-  passage: 'Gênesis 1 - 3',
-  estimatedTime: '15 min',
-  theme: 'A Criação do Mundo e o Jardim do Éden',
-  category: 'Pentateuco',
-  book: 'Gênesis',
-  content: [
-    "No princípio Deus criou os céus e a terra.",
-    "Era a terra sem forma e vazia; trevas cobriam a face do abismo, e o Espírito de Deus se movia sobre a face das águas.",
-    "Disse Deus: \"Haja luz\", e houve luz.",
-    "Deus viu que a luz era boa, e separou a luz das trevas.",
-    "Deu à luz o nome de dia e às trevas o nome de noite. Passaram-se a tarde e a manhã; esse foi o primeiro dia.",
-    "Depois disse Deus: \"Haja entre as águas um firmamento que separe águas de águas\"."
-  ]
-};
-
 export const MOCK_POSTS: Post[] = [
   {
     id: 'p1',
