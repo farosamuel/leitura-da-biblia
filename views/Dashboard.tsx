@@ -1,51 +1,97 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MOCK_USER, MOCK_READING, IMAGES } from '../constants';
+import { MOCK_USER, IMAGES } from '../constants';
+import { readingPlanService } from '../services/readingPlanService';
+import { supabase } from '../services/supabaseClient';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+  const currentDay = readingPlanService.getCurrentDay();
+  const todayPlan = readingPlanService.getPlanForDay(currentDay);
+
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [completedDays, setCompletedDays] = useState(0);
+  const totalDays = readingPlanService.getTotalDays();
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+
+      if (session?.user) {
+        // Fetch profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        setProfile(profileData);
+
+        // Fetch progress for this user
+        const { count, error } = await supabase
+          .from('reading_progress')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', session.user.id)
+          .eq('is_read', true);
+
+        if (!error && count !== null) {
+          setCompletedDays(count);
+        }
+      }
+    };
+    init();
+  }, []);
+
+  const progressPercent = Math.round((completedDays / totalDays) * 100);
+  const userName = profile?.name || session?.user?.user_metadata?.full_name || 'Guerreiro';
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-black text-slate-900 dark:text-white">Bom dia, {MOCK_USER.name}!</h1>
-        <p className="text-slate-500">Hoje é dia de avançar no conhecimento. Vamos para a leitura de hoje?</p>
+        <h1 className="text-[40px] font-black text-slate-900 dark:text-white leading-tight tracking-tight">
+          Bom dia, <span className="text-primary">{userName}</span>!
+        </h1>
+        <p className="text-lg text-slate-500 font-medium tracking-tight">Hoje é dia de avançar no conhecimento. Vamos para a leitura de hoje?</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           {/* Daily Card */}
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-zinc-800 overflow-hidden">
-            <div className="bg-primary px-6 py-4 flex justify-between items-center text-white">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <span className="material-symbols-outlined">calendar_today</span>
+          <div className="bg-white dark:bg-zinc-900 rounded-[32px] shadow-premium border border-slate-100 dark:border-zinc-800 overflow-hidden group/card hover:border-primary/20 transition-all duration-500">
+            <div className="bg-gradient-to-r from-primary-600 to-primary-500 px-8 py-5 flex justify-between items-center text-white">
+              <h3 className="font-bold text-lg flex items-center gap-3">
+                <span className="material-symbols-outlined fill-1">calendar_today</span>
                 Leitura de Hoje
               </h3>
-              <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm">Dia 288/365</span>
+              <span className="bg-white/20 px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest backdrop-blur-md border border-white/20">Dia {currentDay} de 365</span>
             </div>
-            <div className="p-6 md:p-8">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
-                <div>
-                  <h4 className="text-2xl font-black text-slate-900 dark:text-white mb-1">Salmos 119:1-88</h4>
-                  <p className="text-slate-500 font-medium">Tempo estimado: 15 min</p>
+            <div className="p-8 md:p-10">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-10">
+                <div className="space-y-1">
+                  <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-none">{todayPlan?.passage}</h4>
+                  <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
+                    <span className="material-symbols-outlined text-sm">schedule</span>
+                    Tempo estimado: {todayPlan?.estimatedTime}
+                  </div>
                 </div>
-                <button 
+                <button
                   onClick={() => navigate('/reading')}
-                  className="bg-primary hover:bg-primary-dark text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-red-200 dark:shadow-none transition-all flex items-center gap-2 w-full md:w-auto justify-center active:scale-95"
+                  className="bg-primary hover:bg-primary-600 text-white px-10 py-5 rounded-2xl font-black shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all flex items-center gap-3 w-full md:w-auto justify-center active:scale-[0.98] group/btn"
                 >
-                  <span className="material-symbols-outlined">check_circle</span>
-                  Marcar como Lido
+                  <span className="material-symbols-outlined group-hover:rotate-12 transition-transform">auto_stories</span>
+                  COMEÇAR LEITURA
                 </button>
               </div>
-              <div className="bg-slate-50 dark:bg-zinc-800/50 rounded-2xl p-5 border border-slate-100 dark:border-zinc-800">
-                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary">sticky_note_2</span>
-                  Notas Rápidas
+              <div className="bg-slate-50 dark:bg-zinc-800/40 rounded-3xl p-6 border border-slate-100 dark:border-zinc-800 group-focus-within/card:border-primary/30 transition-colors">
+                <h5 className="text-xs font-black text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-widest">
+                  <span className="material-symbols-outlined text-primary text-[20px]">edit_note</span>
+                  Insights & Reflexões
                 </h5>
-                <textarea 
-                  className="w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 rounded-xl text-sm focus:ring-primary focus:border-primary placeholder:text-slate-400"
-                  placeholder="Escreva o que Deus falou com você hoje..."
+                <textarea
+                  className="w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400 transition-all outline-none resize-none"
+                  placeholder="O que o Espírito Santo falou ao seu coração hoje?"
                   rows={3}
                 />
               </div>
@@ -65,7 +111,7 @@ const Dashboard: React.FC = () => {
               {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, idx) => (
                 <div key={day} className="flex-1 flex flex-col items-center gap-3 group">
                   <div className="w-full bg-primary-light dark:bg-primary/10 rounded-t-xl h-full relative overflow-hidden">
-                    <div 
+                    <div
                       className={`absolute bottom-0 w-full bg-primary rounded-t-xl transition-all duration-700 ${idx < 3 ? 'h-full' : 'h-0'}`}
                     />
                   </div>
@@ -84,10 +130,18 @@ const Dashboard: React.FC = () => {
               <div className="relative h-48 w-48">
                 <svg className="h-full w-full" viewBox="0 0 100 100">
                   <circle className="text-slate-100 dark:text-zinc-800 stroke-current" cx="50" cy="50" fill="transparent" r="40" strokeWidth="8" />
-                  <circle className="text-primary stroke-current" cx="50" cy="50" fill="transparent" r="40" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset="60" strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
+                  <circle
+                    className="text-primary stroke-current"
+                    cx="50" cy="50"
+                    fill="transparent" r="40" strokeWidth="8"
+                    strokeDasharray="251.2"
+                    strokeDashoffset={251.2 - (251.2 * progressPercent) / 100}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 1s ease-out' }}
+                  />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-4xl font-black text-slate-900 dark:text-white">76%</span>
+                  <span className="text-4xl font-black text-slate-900 dark:text-white">{progressPercent}%</span>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Concluído</span>
                 </div>
               </div>
@@ -95,11 +149,11 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-50 dark:bg-zinc-800 p-4 rounded-2xl text-center">
                 <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Lidos</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">288</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">{completedDays}</p>
               </div>
               <div className="bg-slate-50 dark:bg-zinc-800 p-4 rounded-2xl text-center">
                 <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Restantes</p>
-                <p className="text-xl font-black text-slate-900 dark:text-white">77</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white">{totalDays - completedDays}</p>
               </div>
             </div>
           </div>
