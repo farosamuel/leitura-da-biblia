@@ -12,12 +12,16 @@ const Dashboard: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [completedDays, setCompletedDays] = useState(0);
+  const [topReaders, setTopReaders] = useState<{ name: string, days: number }[]>([]);
   const totalDays = readingPlanService.getTotalDays();
 
   useEffect(() => {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
+
+      // Aguarda sincronização do plano
+      await readingPlanService.ensureSynced();
 
       if (session?.user) {
         // Fetch profile
@@ -40,9 +44,41 @@ const Dashboard: React.FC = () => {
           setCompletedDays(count);
         }
       }
+
+      // Fetch top readers (all users with most completed days)
+      const { data: allProgress } = await supabase
+        .from('reading_progress')
+        .select('user_id')
+        .eq('is_read', true);
+
+      const { data: allProfiles } = await supabase
+        .from('profiles')
+        .select('id, name');
+
+      if (allProgress && allProfiles) {
+        // Count days per user
+        const userDaysMap: Record<string, number> = {};
+        allProgress.forEach(p => {
+          userDaysMap[p.user_id] = (userDaysMap[p.user_id] || 0) + 1;
+        });
+
+        // Map to profiles and sort
+        const readersWithDays = allProfiles
+          .map(profile => ({
+            name: profile.name || 'Sem nome',
+            days: userDaysMap[profile.id] || 0
+          }))
+          .filter(r => r.days > 0)
+          .sort((a, b) => b.days - a.days)
+          .slice(0, 3);
+
+        setTopReaders(readersWithDays);
+      }
     };
     init();
   }, []);
+
+  const nextBooks = readingPlanService.getNextBooks(completedDays);
 
   const progressPercent = Math.round((completedDays / totalDays) * 100);
   const userName = profile?.name || session?.user?.user_metadata?.full_name || 'Guerreiro';
@@ -164,24 +200,30 @@ const Dashboard: React.FC = () => {
               <button className="text-xs font-black text-primary hover:underline">VER TODOS</button>
             </div>
             <div className="space-y-4">
-              {[
-                { name: 'Ana Maria', days: 290, color: 'bg-yellow-100 text-yellow-700', icon: 'emoji_events' },
-                { name: 'Carlos Silva', days: 289, color: 'bg-slate-100 text-slate-700', icon: 'looks_two' },
-                { name: 'Paulo Roberto', days: 288, color: 'bg-orange-100 text-orange-700', icon: 'looks_3' }
-              ].map((reader, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm ${reader.color}`}>
-                      {reader.name.split(' ').map(n => n[0]).join('')}
+              {topReaders.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">Nenhum leitor ainda</p>
+              ) : topReaders.map((reader, idx) => {
+                const colors = [
+                  'bg-yellow-100 text-yellow-700',
+                  'bg-slate-100 text-slate-700',
+                  'bg-orange-100 text-orange-700'
+                ];
+                const icons = ['emoji_events', 'looks_two', 'looks_3'];
+                return (
+                  <div key={idx} className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm ${colors[idx] || colors[2]}`}>
+                        {reader.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">{reader.name}</p>
+                        <p className="text-xs text-slate-500">{reader.days} dias</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{reader.name}</p>
-                      <p className="text-xs text-slate-500">{reader.days} dias</p>
-                    </div>
+                    <span className={`material-symbols-outlined ${idx === 0 ? 'text-yellow-500' : 'text-slate-300'}`}>{icons[idx]}</span>
                   </div>
-                  <span className={`material-symbols-outlined ${idx === 0 ? 'text-yellow-500' : 'text-slate-300'}`}>{reader.icon}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -189,12 +231,14 @@ const Dashboard: React.FC = () => {
             <span className="material-symbols-outlined absolute -right-6 -bottom-6 text-[160px] text-white opacity-10">auto_stories</span>
             <h3 className="font-black text-xl mb-4 relative z-10">Próximos Livros</h3>
             <ul className="space-y-3 relative z-10">
-              {['Provérbios', 'Eclesiastes', 'Cantares'].map((book, idx) => (
+              {nextBooks.length > 0 ? nextBooks.map((book, idx) => (
                 <li key={idx} className="flex items-center gap-3">
                   <div className={`size-1.5 rounded-full ${idx === 0 ? 'bg-white' : 'bg-white/40'}`} />
                   <span className={`text-sm font-bold ${idx === 0 ? 'opacity-100' : 'opacity-70'}`}>{book}</span>
                 </li>
-              ))}
+              )) : (
+                <li className="text-sm font-bold opacity-70">Reta final do plano!</li>
+              )}
             </ul>
           </div>
         </div>

@@ -78,6 +78,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
             <Link to="/dashboard" className={`text-sm font-bold ${isActive('/dashboard') ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-600 dark:text-slate-400'}`}>Dashboard</Link>
             <Link to="/reading" className={`text-sm font-bold ${isActive('/reading') ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-600 dark:text-slate-400'}`}>Leitura Diária</Link>
             <Link to="/community" className={`text-sm font-bold ${isActive('/community') ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-600 dark:text-slate-400'}`}>Comunidade</Link>
+            <Link to="/notes" className={`text-sm font-bold ${isActive('/notes') ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-600 dark:text-slate-400'}`}>Minhas Notas</Link>
             {userRole === UserRole.ADMIN && (
               <Link to="/admin" className={`text-sm font-bold ${location.pathname.startsWith('/admin') ? 'text-primary border-b-2 border-primary pb-1' : 'text-slate-600 dark:text-slate-400'}`}>Admin</Link>
             )}

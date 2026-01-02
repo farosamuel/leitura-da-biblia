@@ -4,6 +4,7 @@ import { supabase } from '../services/supabaseClient';
 
 interface DBPost {
   id: string;
+  user_id: string;
   category: string;
   content: string;
   image_url?: string;
@@ -21,6 +22,7 @@ const Community: React.FC = () => {
   const [newPost, setNewPost] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [rankingUsers, setRankingUsers] = useState<{ name: string, prog: number, rank: number }[]>([]);
 
   const fetchPosts = async () => {
     setLoading(true);
@@ -52,6 +54,37 @@ const Community: React.FC = () => {
       }
 
       fetchPosts();
+
+      // Fetch ranking data
+      const { data: allProgress } = await supabase
+        .from('reading_progress')
+        .select('user_id')
+        .eq('is_read', true);
+
+      const { data: allProfiles } = await supabase
+        .from('profiles')
+        .select('id, name');
+
+      if (allProgress && allProfiles) {
+        const userDaysMap: Record<string, number> = {};
+        allProgress.forEach(p => {
+          userDaysMap[p.user_id] = (userDaysMap[p.user_id] || 0) + 1;
+        });
+
+        const totalDays = 365;
+        const ranked = allProfiles
+          .map(profile => ({
+            name: profile.name || 'Sem nome',
+            prog: Math.round((userDaysMap[profile.id] || 0) / totalDays * 100),
+            rank: 0
+          }))
+          .filter(r => r.prog > 0)
+          .sort((a, b) => b.prog - a.prog)
+          .slice(0, 3)
+          .map((r, idx) => ({ ...r, rank: idx + 1 }));
+
+        setRankingUsers(ranked);
+      }
     };
     init();
   }, []);
@@ -91,6 +124,22 @@ const Community: React.FC = () => {
       console.error('Error updating likes:', error);
     } else {
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes: currentLikes + 1 } : p));
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm('Tem certeza que deseja apagar este post?')) return;
+
+    const { error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId);
+
+    if (error) {
+      console.error('Error deleting post:', error);
+      alert('Erro ao apagar post.');
+    } else {
+      setPosts(prev => prev.filter(p => p.id !== postId));
     }
   };
 
@@ -217,8 +266,12 @@ const Community: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <button className="text-slate-300 hover:text-slate-600">
-                <span className="material-symbols-outlined">more_horiz</span>
+              <button
+                onClick={() => post.user_id === session?.user?.id && handleDeletePost(post.id)}
+                className={`text-slate-300 hover:text-slate-600 ${post.user_id === session?.user?.id ? '' : 'invisible'}`}
+                title="Apagar post"
+              >
+                <span className="material-symbols-outlined">delete</span>
               </button>
             </div>
 
@@ -263,23 +316,26 @@ const Community: React.FC = () => {
             <span className="text-[10px] font-black text-primary/60 bg-primary/10 px-2 py-1 rounded uppercase tracking-widest">Semanal</span>
           </div>
           <div className="space-y-6">
-            {[
-              { name: 'Ana Clara', prog: 98, avatar: IMAGES.FRIEND_1, rank: 1, ring: 'ring-yellow-400' },
-              { name: 'Carlos E.', prog: 92, avatar: IMAGES.FRIEND_2, rank: 2, ring: 'ring-slate-200' },
-              { name: 'Sarah J.', prog: 85, avatar: IMAGES.FRIEND_3, rank: 3, ring: 'ring-orange-300' }
-            ].map(user => (
-              <div key={user.rank} className="flex items-center gap-4">
-                <div className="font-black text-primary w-4 text-center">{user.rank}</div>
-                <img src={user.avatar} className={`size-10 rounded-full ring-2 ${user.ring} object-cover`} alt={user.name} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{user.name}</p>
-                  <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1.5 mt-1">
-                    <div className="bg-primary h-1.5 rounded-full" style={{ width: `${user.prog}%` }} />
+            {rankingUsers.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Nenhum leitor ainda</p>
+            ) : rankingUsers.map(user => {
+              const rings = ['ring-yellow-400', 'ring-slate-200', 'ring-orange-300'];
+              return (
+                <div key={user.rank} className="flex items-center gap-4">
+                  <div className="font-black text-primary w-4 text-center">{user.rank}</div>
+                  <div className={`size-10 rounded-full ring-2 ${rings[user.rank - 1] || rings[2]} bg-primary/10 flex items-center justify-center font-black text-primary text-sm`}>
+                    {user.name.split(' ').map(n => n[0]).join('')}
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{user.name}</p>
+                    <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1.5 mt-1">
+                      <div className="bg-primary h-1.5 rounded-full" style={{ width: `${user.prog}%` }} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-primary">{user.prog}%</span>
                 </div>
-                <span className="text-[10px] font-black text-primary">{user.prog}%</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <button className="w-full mt-6 text-xs font-black text-slate-400 hover:text-primary transition-colors tracking-widest">VER RANKING COMPLETO</button>
         </div>
@@ -294,8 +350,8 @@ const Community: React.FC = () => {
             ))}
           </div>
         </div>
-      </aside>
-    </div>
+      </aside >
+    </div >
   );
 };
 

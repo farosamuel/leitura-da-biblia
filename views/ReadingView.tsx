@@ -15,6 +15,8 @@ const ReadingView: React.FC = () => {
   const [insight, setInsight] = useState<string | null>(null);
   const [loadingInsight, setLoadingInsight] = useState(false);
   const [isRead, setIsRead] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,6 +27,7 @@ const ReadingView: React.FC = () => {
   const fetchDayData = useCallback(async (day: number) => {
     if (!session?.user) return;
     setLoading(true);
+    await readingPlanService.ensureSynced();
     const data = readingPlanService.getPlanForDay(day);
     setDayData(data);
 
@@ -36,12 +39,13 @@ const ReadingView: React.FC = () => {
       // Fetch progress from Supabase for this user
       const { data: progressData } = await supabase
         .from('reading_progress')
-        .select('is_read')
+        .select('is_read, notes')
         .eq('day_number', day)
         .eq('user_id', session.user.id)
         .maybeSingle();
 
       setIsRead(!!progressData?.is_read);
+      setNotes(progressData?.notes || '');
       setInsight(null);
     }
     setLoading(false);
@@ -53,12 +57,20 @@ const ReadingView: React.FC = () => {
     }
   }, [currentDay, fetchDayData, session]);
 
-  const handleAIInsight = async () => {
-    if (!dayData) return;
-    setLoadingInsight(true);
-    const result = await gemini.getReadingInsight(dayData.passage, dayData.theme);
-    setInsight(result || "Insight indisponível.");
-    setLoadingInsight(false);
+  const saveNotes = async (content: string) => {
+    if (!session?.user) return;
+    setSavingNotes(true);
+    const { error } = await supabase
+      .from('reading_progress')
+      .upsert({
+        user_id: session.user.id,
+        day_number: currentDay,
+        notes: content,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,day_number' });
+
+    if (error) console.error('Error saving notes:', error);
+    setSavingNotes(false);
   };
 
   const toggleRead = async () => {
@@ -73,7 +85,8 @@ const ReadingView: React.FC = () => {
         user_id: session.user.id,
         day_number: currentDay,
         is_read: newState,
-        read_at: new Date().toISOString()
+        read_at: newState ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,day_number' });
 
     if (error) console.error('Error updating progress:', error);
@@ -180,26 +193,7 @@ const ReadingView: React.FC = () => {
               </div>
             </article>
 
-            <div className="mt-12 pt-8 border-t border-slate-100 flex flex-col items-center gap-6">
-              <button
-                onClick={handleAIInsight}
-                disabled={loadingInsight}
-                className="bg-zinc-950 text-white px-8 py-4 rounded-2xl font-bold flex items-center gap-3 hover:bg-zinc-800 transition-all shadow-xl shadow-slate-200 active:scale-95 disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined">{loadingInsight ? 'refresh' : 'psychology'}</span>
-                {loadingInsight ? 'Processando Insight...' : 'Gerar Insight com IA'}
-              </button>
-
-              {insight && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-slate-700 italic text-sm leading-relaxed animate-in zoom-in duration-300">
-                  <div className="flex items-center gap-2 mb-2 not-italic font-black text-primary uppercase tracking-widest text-xs">
-                    <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                    IA Insight
-                  </div>
-                  {insight}
-                </div>
-              )}
-            </div>
+            {/* AI Insight Section Removed */}
           </div>
 
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
@@ -208,11 +202,16 @@ const ReadingView: React.FC = () => {
                 <span className="material-symbols-outlined text-primary">edit_note</span>
                 Anotações Pessoais
               </h3>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Salvo Automaticamente</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {savingNotes ? 'Salvando...' : 'Salvo Automaticamente'}
+              </span>
             </div>
             <textarea
               className="w-full bg-slate-50 border-none rounded-2xl p-6 text-slate-700 placeholder:text-slate-400 focus:ring-2 focus:ring-primary min-h-[150px] resize-none"
               placeholder="O que você aprendeu com a leitura de hoje?"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={() => saveNotes(notes)}
             />
           </div>
         </div>

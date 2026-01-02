@@ -1,28 +1,97 @@
 import React, { useState, useEffect } from 'react';
 import { IMAGES } from '../../constants';
 import { supabase } from '../../services/supabaseClient';
+import { readingPlanService } from '../../services/readingPlanService';
+
+interface UserWithProgress {
+  id: string;
+  name: string;
+  email: string;
+  avatar_url?: string;
+  completedDays: number;
+  lastReadDay: number;
+  status: 'em_dia' | 'atrasado' | 'concluido';
+  progressPercent: number;
+}
 
 const AdminParticipants: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<UserWithProgress[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newMember, setNewMember] = useState({ name: '', email: '', password: '' });
   const [submitting, setSubmitting] = useState(false);
   const [successMember, setSuccessMember] = useState<string | null>(null);
 
+  const currentDay = readingPlanService.getCurrentDay();
+  const totalDays = readingPlanService.getTotalDays();
+
   const fetchProfiles = async () => {
     setLoading(true);
-    const { data } = await supabase
+
+    // Fetch all profiles
+    const { data: profilesData } = await supabase
       .from('profiles')
       .select('*')
       .order('name');
-    if (data) setProfiles(data);
+
+    if (!profilesData) {
+      setProfiles([]);
+      setLoading(false);
+      return;
+    }
+
+    // Fetch all progress in one query
+    const { data: progressData } = await supabase
+      .from('reading_progress')
+      .select('user_id, day_number, is_read')
+      .eq('is_read', true);
+
+    // Map progress to users
+    const usersWithProgress: UserWithProgress[] = profilesData.map(profile => {
+      const userProgress = progressData?.filter(p => p.user_id === profile.id) || [];
+      const completedDays = userProgress.length;
+      const lastReadDay = userProgress.length > 0
+        ? Math.max(...userProgress.map(p => p.day_number))
+        : 0;
+
+      const progressPercent = Math.round((completedDays / totalDays) * 100);
+
+      // Determine status
+      let status: 'em_dia' | 'atrasado' | 'concluido' = 'em_dia';
+      if (completedDays >= totalDays) {
+        status = 'concluido';
+      } else if (completedDays < currentDay - 1) {
+        // User is behind if they haven't completed at least yesterday's reading
+        status = 'atrasado';
+      }
+
+      return {
+        id: profile.id,
+        name: profile.name || 'Sem nome',
+        email: profile.email || '',
+        avatar_url: profile.avatar_url,
+        completedDays,
+        lastReadDay,
+        status,
+        progressPercent,
+      };
+    });
+
+    setProfiles(usersWithProgress);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchProfiles();
   }, []);
+
+  // Calculate stats
+  const stats = {
+    total: profiles.length,
+    active: profiles.length,
+    delayed: profiles.filter(p => p.status === 'atrasado').length,
+    completed: profiles.filter(p => p.status === 'concluido').length,
+  };
 
   const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,11 +159,12 @@ const AdminParticipants: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total de Membros', val: profiles.length.toString(), color: 'text-primary', bg: 'bg-primary/5', icon: 'groups' },
-          { label: 'Membros Ativos', val: profiles.length.toString(), color: 'text-emerald-600', bg: 'bg-emerald-500/5', icon: 'check_circle' },
-          { label: 'Com Atraso', val: '0', color: 'text-orange-600', bg: 'bg-orange-500/5', icon: 'warning' },
-          { label: 'Concluídos', val: '0', color: 'text-indigo-600', bg: 'bg-indigo-500/5', icon: 'emoji_events' },
+          { label: 'Total de Membros', val: stats.total.toString(), color: 'text-primary', bg: 'bg-primary/5', icon: 'groups' },
+          { label: 'Membros Ativos', val: stats.active.toString(), color: 'text-emerald-600', bg: 'bg-emerald-500/5', icon: 'check_circle' },
+          { label: 'Com Atraso', val: stats.delayed.toString(), color: 'text-orange-600', bg: 'bg-orange-500/5', icon: 'warning' },
+          { label: 'Concluídos', val: stats.completed.toString(), color: 'text-indigo-600', bg: 'bg-indigo-500/5', icon: 'emoji_events' },
         ].map((s, i) => (
+
           <div key={i} className="bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-slate-100 dark:border-zinc-800 shadow-premium group hover:border-primary/20 transition-all duration-500">
             <div className="flex items-center justify-between mb-6">
               <div className={`p-3 rounded-2xl ${s.bg} border border-transparent group-hover:border-current/10 transition-all`}>
@@ -136,47 +206,57 @@ const AdminParticipants: React.FC = () => {
                 <tr>
                   <td colSpan={5} className="py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">Carregando membros...</td>
                 </tr>
-              ) : profiles.map((p, i) => (
-                <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                  <td className="py-4 px-6">
-                    <div className="flex items-center gap-3">
-                      {p.avatar_url ? (
-                        <img src={p.avatar_url} className="size-10 rounded-full border-2 border-white dark:border-zinc-800 shadow-sm" alt="U" />
-                      ) : (
-                        <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary text-xs uppercase">{p.name[0]}</div>
-                      )}
-                      <div>
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{p.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold">{p.email}</p>
+              ) : profiles.map((p, i) => {
+                const statusConfig = {
+                  em_dia: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100', dot: 'bg-green-500', label: 'Em dia' },
+                  atrasado: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100', dot: 'bg-orange-500', label: 'Atrasado' },
+                  concluido: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', dot: 'bg-indigo-500', label: 'Concluído' },
+                };
+                const sc = statusConfig[p.status];
+
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors group">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-3">
+                        {p.avatar_url ? (
+                          <img src={p.avatar_url} className="size-10 rounded-full border-2 border-white dark:border-zinc-800 shadow-sm" alt="U" />
+                        ) : (
+                          <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary text-xs uppercase">{p.name[0]}</div>
+                        )}
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white">{p.name}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">{p.email}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <p className="text-sm font-bold">Gênesis</p>
-                    <p className="text-[10px] text-slate-400 font-bold">Capítulo 1</p>
-                  </td>
-                  <td className="py-4 px-6 min-w-[140px]">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-black">0%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1.5">
-                      <div className="bg-primary h-1.5 rounded-full" style={{ width: `0%` }} />
-                    </div>
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border bg-green-50 text-green-700 border-green-100`}>
-                      <span className={`size-1.5 rounded-full bg-green-500`} />
-                      Em dia
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><span className="material-symbols-outlined text-lg">edit</span></button>
-                      <button className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><span className="material-symbols-outlined text-lg">delete</span></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-4 px-6">
+                      <p className="text-sm font-bold">Dia {p.lastReadDay > 0 ? p.lastReadDay : '-'}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">{p.completedDays} dias lidos</p>
+                    </td>
+                    <td className="py-4 px-6 min-w-[140px]">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-black">{p.progressPercent}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1.5">
+                        <div className="bg-primary h-1.5 rounded-full" style={{ width: `${p.progressPercent}%` }} />
+                      </div>
+                    </td>
+                    <td className="py-4 px-6">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${sc.bg} ${sc.text} ${sc.border}`}>
+                        <span className={`size-1.5 rounded-full ${sc.dot}`} />
+                        {sc.label}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><span className="material-symbols-outlined text-lg">edit</span></button>
+                        <button className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><span className="material-symbols-outlined text-lg">delete</span></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+
             </tbody>
           </table>
         </div>

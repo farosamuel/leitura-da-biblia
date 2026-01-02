@@ -24,22 +24,7 @@ class BibleService {
     private version = 'nvi'; // Nova Versão Internacional
 
     async getChapterVerses(bookAbbrev: string, chapter: number): Promise<string[]> {
-        // Try primary API first
-        try {
-            const abbrev = bookAbbrev.toLowerCase();
-            const response = await fetch(`${this.baseUrl}/verses/${this.version}/${abbrev}/${chapter}`);
-
-            if (response.ok) {
-                const data: BibleChapter = await response.json();
-                if (data.verses && data.verses.length > 0) {
-                    return data.verses.map(v => v.text);
-                }
-            }
-        } catch (error) {
-            console.warn('Primary API failed, trying fallback:', error);
-        }
-
-        // Fallback to bible-api.com (supports Portuguese with 'almeida')
+        // Try bible-api.com first (Primary - More reliable)
         try {
             // Map abbreviations to full book names for bible-api.com
             const bookNameMap: Record<string, string> = {
@@ -64,16 +49,32 @@ class BibleService {
 
             const bookName = bookNameMap[bookAbbrev.toLowerCase()] || bookAbbrev;
             const fallbackUrl = `https://bible-api.com/${bookName}+${chapter}?translation=almeida`;
-            const fallbackResponse = await fetch(fallbackUrl);
+            // Add cache busting to prevent stale responses
+            const response = await fetch(fallbackUrl);
 
-            if (fallbackResponse.ok) {
-                const fallbackData = await fallbackResponse.json();
-                if (fallbackData.verses && fallbackData.verses.length > 0) {
-                    return fallbackData.verses.map((v: any) => v.text);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.verses && data.verses.length > 0) {
+                    return data.verses.map((v: any) => v.text.replace(/\s+$/, ''));
+                }
+            }
+        } catch (error) {
+            console.warn('Primary API (bible-api) failed, trying fallback:', error);
+        }
+
+        // Fallback to abibliadigital
+        try {
+            const abbrev = bookAbbrev.toLowerCase();
+            const response = await fetch(`${this.baseUrl}/verses/${this.version}/${abbrev}/${chapter}`);
+
+            if (response.ok) {
+                const data: BibleChapter = await response.json();
+                if (data.verses && data.verses.length > 0) {
+                    return data.verses.map(v => v.text);
                 }
             }
         } catch (fallbackError) {
-            console.error('Fallback API also failed:', fallbackError);
+            console.error('Fallback API (abibliadigital) also failed:', fallbackError);
         }
 
         return [];

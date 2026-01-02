@@ -6,32 +6,100 @@ import AuthView from './views/AuthView';
 import Dashboard from './views/Dashboard';
 import ReadingView from './views/ReadingView';
 import Community from './views/Community';
+import NotesView from './views/NotesView';
 import AdminParticipants from './views/admin/AdminParticipants';
+import AdminPlan from './views/admin/AdminPlan';
 import { supabase } from './services/supabaseClient';
 
-// Mock simple settings page
-const Settings = () => (
-  <div className="max-w-4xl mx-auto space-y-8 p-4">
-    <h1 className="text-3xl font-black">Configurações</h1>
-    <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="size-20 rounded-full bg-slate-200" />
-        <button className="text-primary font-bold hover:underline">Alterar Foto</button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
-          <input className="w-full border-slate-200 rounded-xl" defaultValue="João Davi" />
+// Settings page with real data
+const Settings = () => {
+  const [profile, setProfile] = React.useState<any>(null);
+  const [session, setSession] = React.useState<any>(null);
+  const [name, setName] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+
+      if (session?.user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (data) {
+          setProfile(data);
+          setName(data.name || '');
+        }
+      }
+    };
+    init();
+  }, []);
+
+  const handleSave = async () => {
+    if (!session?.user) return;
+    setSaving(true);
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name, updated_at: new Date().toISOString() })
+      .eq('id', session.user.id);
+
+    if (error) {
+      alert('Erro ao salvar: ' + error.message);
+    } else {
+      alert('Perfil atualizado com sucesso!');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8 p-4">
+      <h1 className="text-3xl font-black">Configurações</h1>
+      <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="flex items-center gap-4">
+          {profile?.avatar_url ? (
+            <img src={profile.avatar_url} className="size-20 rounded-full object-cover" alt="Avatar" />
+          ) : (
+            <div className="size-20 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary text-2xl">
+              {name ? name[0].toUpperCase() : 'U'}
+            </div>
+          )}
+          <button className="text-primary font-bold hover:underline">Alterar Foto</button>
         </div>
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
-          <input className="w-full border-slate-200 rounded-xl" defaultValue="joao.davi@exemplo.com" disabled />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
+            <input
+              className="w-full border border-slate-200 rounded-xl px-4 py-3"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
+            <input
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 bg-slate-50"
+              value={profile?.email || session?.user?.email || ''}
+              disabled
+            />
+          </div>
         </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="bg-primary text-white px-8 py-3 rounded-xl font-bold hover:bg-primary-600 transition-colors disabled:opacity-50"
+        >
+          {saving ? 'Salvando...' : 'Salvar Alterações'}
+        </button>
       </div>
-      <button className="bg-primary text-white px-8 py-3 rounded-xl font-bold">Salvar Alterações</button>
     </div>
-  </div>
-);
+  );
+};
+
 
 const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
@@ -83,12 +151,13 @@ const App: React.FC = () => {
                   <Route path="dashboard" element={<Dashboard />} />
                   <Route path="reading" element={<ReadingView />} />
                   <Route path="community" element={<Community />} />
+                  <Route path="notes" element={<NotesView />} />
                   <Route path="settings" element={<Settings />} />
 
                   {/* Admin Routes */}
                   <Route path="admin" element={<Navigate to="/admin/participants" replace />} />
                   <Route path="admin/participants" element={<AdminParticipants />} />
-                  <Route path="admin/plan" element={<div className="p-8"><h1 className="text-3xl font-black">Definir Plano (Em breve)</h1></div>} />
+                  <Route path="admin/plan" element={<AdminPlan />} />
                   <Route path="admin/reports" element={<div className="p-8"><h1 className="text-3xl font-black">Relatórios (Em breve)</h1></div>} />
                   <Route path="admin/settings" element={<div className="p-8"><h1 className="text-3xl font-black">Admin Config (Em breve)</h1></div>} />
 
