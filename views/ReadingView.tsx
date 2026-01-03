@@ -109,7 +109,7 @@ const ReadingView: React.FC = () => {
   );
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-6xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500 mt-4">
       <nav className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm">
           <span className="text-slate-400">Home</span>

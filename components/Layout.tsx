@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { UserRole } from '../types';
-import { IMAGES, MOCK_USER } from '../constants';
+import { IMAGES } from '../constants';
+import { readingPlanService } from '../services/readingPlanService';
 import { supabase } from '../services/supabaseClient';
 
 interface LayoutProps {
@@ -16,6 +17,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -29,6 +31,32 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
           .eq('id', session.user.id)
           .maybeSingle();
         setProfile(profileData);
+
+        // Calculate Streak
+        const { data: progress } = await supabase
+          .from('reading_progress')
+          .select('day_number')
+          .eq('user_id', session.user.id)
+          .eq('is_read', true);
+
+        if (progress) {
+          const readDays = new Set(progress.map(p => p.day_number));
+          const currentDay = readingPlanService.getCurrentDay();
+          let currentStreak = 0;
+          let checkDay = currentDay;
+
+          // If today is not read, check if yesterday was read to keep streak alive
+          if (!readDays.has(checkDay)) {
+            checkDay--;
+          }
+
+          // Count backwards
+          while (checkDay > 0 && readDays.has(checkDay)) {
+            currentStreak++;
+            checkDay--;
+          }
+          setStreak(currentStreak);
+        }
       }
     };
     fetchSession();
@@ -87,7 +115,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
           <div className="flex items-center gap-3 sm:gap-6">
             <div className="hidden lg:flex items-center bg-primary-50 dark:bg-primary/10 px-4 py-2 rounded-2xl border border-primary/10 transition-all hover:bg-primary/20">
               <span className="material-symbols-outlined text-primary text-[20px] mr-2 fill-1">local_fire_department</span>
-              <span className="text-[11px] font-black text-primary uppercase tracking-[0.1em]">{MOCK_USER.streak} Dias seguidos</span>
+              <span className="text-[11px] font-black text-primary uppercase tracking-[0.1em]">{streak} Dias seguidos</span>
             </div>
             <div className="flex items-center gap-2">
               <button className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors relative group">
