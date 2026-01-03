@@ -179,7 +179,7 @@ const ReadingView: React.FC = () => {
                     <div className="h-4 bg-slate-100 rounded-full w-5/6"></div>
                   </div>
                 ) : verses.length > 0 ? (
-                  <div className="text-slate-700 dark:text-zinc-300 leading-relaxed text-lg font-medium space-y-4">
+                  <div className="text-slate-700 dark:text-zinc-300 leading-relaxed text-lg font-medium space-y-4 text-justify">
                     {verses.map((v, i) => (
                       <p key={i}><span className="text-primary font-black mr-2 text-sm">{i + 1}</span> {v}</p>
                     ))}
