@@ -21,11 +21,11 @@ export interface BibleChapter {
 
 class BibleService {
     private baseUrl = 'https://www.abibliadigital.com.br/api';
-    private version = 'nvi'; // Nova Versão Internacional
+    private defaultVersion = 'nvi'; // Nova Versão Internacional
     private cache = new Map<string, string[]>();
 
-    async getChapterVerses(bookAbbrev: string, chapter: number): Promise<string[]> {
-        const cacheKey = `${bookAbbrev.toLowerCase()}-${chapter}`;
+    async getChapterVerses(bookAbbrev: string, chapter: number, version: string = this.defaultVersion): Promise<string[]> {
+        const cacheKey = `${bookAbbrev.toLowerCase()}-${chapter}-${version}`;
         if (this.cache.has(cacheKey)) {
             console.log(`Serving ${cacheKey} from cache`);
             return this.cache.get(cacheKey)!;
@@ -73,7 +73,7 @@ class BibleService {
         // Fallback to abibliadigital
         try {
             const abbrev = bookAbbrev.toLowerCase();
-            const response = await fetch(`${this.baseUrl}/verses/${this.version}/${abbrev}/${chapter}`);
+            const response = await fetch(`${this.baseUrl}/verses/${version}/${abbrev}/${chapter}`);
 
             if (response.ok) {
                 const data: BibleChapter = await response.json();

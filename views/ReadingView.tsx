@@ -17,6 +17,7 @@ const ReadingView: React.FC = () => {
   const [isRead, setIsRead] = useState(false);
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [version, setVersion] = useState('nvi');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -33,7 +34,7 @@ const ReadingView: React.FC = () => {
 
     if (data) {
       const { bookAbbrev, chapter } = bibleService.parsePassage(data.passage);
-      const content = await bibleService.getChapterVerses(bookAbbrev, chapter);
+      const content = await bibleService.getChapterVerses(bookAbbrev, chapter, version);
       setVerses(content);
 
       // Fetch progress from Supabase for this user
@@ -55,7 +56,7 @@ const ReadingView: React.FC = () => {
     if (session) {
       fetchDayData(currentDay);
     }
-  }, [currentDay, fetchDayData, session]);
+  }, [currentDay, version, fetchDayData, session]); // Added version dependency
 
   const saveNotes = async (content: string) => {
     if (!session?.user) return;
@@ -158,9 +159,15 @@ const ReadingView: React.FC = () => {
                 <h2 className="text-3xl font-black text-slate-900">{dayData?.passage}</h2>
               </div>
               <div className="flex gap-2">
-                <select className="bg-slate-50 border-slate-200 rounded-xl text-xs font-bold py-2 px-3 focus:ring-primary">
-                  <option>NVI (Versão Internacional)</option>
-                  <option>Almeida Revista</option>
+                <select
+                  className="bg-slate-50 border-slate-200 rounded-xl text-xs font-bold py-2 px-3 focus:ring-primary"
+                  value={version}
+                  onChange={(e) => setVersion(e.target.value)}
+                >
+                  <option value="nvi">NVI (Nova Versão Internacional)</option>
+                  <option value="acf">ACF (Almeida Corrigida Fiel)</option>
+                  <option value="aa">AA (Almeida Atualizada)</option>
+                  <option value="kjv">KJV (King James Version)</option>
                 </select>
                 <button className="p-2 rounded-xl hover:bg-slate-50 text-slate-400">
                   <span className="material-symbols-outlined">volume_up</span>
