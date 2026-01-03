@@ -86,7 +86,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col gap-2">
-        <h1 className="text-[40px] font-black text-slate-900 dark:text-white leading-tight tracking-tight">
+        <h1 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white leading-tight tracking-tight">
           Bom dia, <span className="text-primary">{userName}</span>!
         </h1>
         <p className="text-lg text-slate-500 font-medium tracking-tight">Hoje é dia de avançar no conhecimento. Vamos para a leitura de hoje?</p>
@@ -103,10 +103,10 @@ const Dashboard: React.FC = () => {
               </h3>
               <span className="bg-white/20 px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest backdrop-blur-md border border-white/20">Dia {currentDay} de 365</span>
             </div>
-            <div className="p-8 md:p-10">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-10">
+            <div className="p-6 md:p-10">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-8 md:mb-10">
                 <div className="space-y-1">
-                  <h4 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-none">{todayPlan?.passage}</h4>
+                  <h4 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-none">{todayPlan?.passage}</h4>
                   <div className="flex items-center gap-2 text-slate-500 font-bold text-sm">
                     <span className="material-symbols-outlined text-sm">schedule</span>
                     Tempo estimado: {todayPlan?.estimatedTime}
@@ -114,7 +114,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <button
                   onClick={() => navigate('/reading')}
-                  className="bg-primary hover:bg-primary-600 text-white px-10 py-5 rounded-2xl font-black shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all flex items-center gap-3 w-full md:w-auto justify-center active:scale-[0.98] group/btn"
+                  className="bg-primary hover:bg-primary-600 text-white px-8 py-4 rounded-2xl font-black shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all flex items-center gap-3 w-full md:w-auto justify-center active:scale-[0.98] group/btn"
                 >
                   <span className="material-symbols-outlined group-hover:rotate-12 transition-transform">auto_stories</span>
                   COMEÇAR LEITURA
