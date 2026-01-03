@@ -222,7 +222,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
 
       <footer className="py-8 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="text-sm text-slate-500">© 2024 Plano de Leitura Célula Raiz de Davi. Todos os direitos reservados.</p>
+          <p className="text-sm text-slate-500">© 2026 Plano de Leitura Célula Raiz de Davi. Todos os direitos reservados.</p>
         </div>
       </footer>
     </div>
