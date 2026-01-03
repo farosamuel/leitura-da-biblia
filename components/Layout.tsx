@@ -69,9 +69,10 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
 
   const isActive = (path: string) => location.pathname === path;
 
-  const NavItem: React.FC<{ to: string; label: string; icon: string }> = ({ to, label, icon }) => (
+  const NavItem: React.FC<{ to: string; label: string; icon: string; onClick?: () => void }> = ({ to, label, icon, onClick }) => (
     <Link
       to={to}
+      onClick={onClick}
       className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 ${isActive(to)
         ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-[1.02]'
         : 'text-slate-600 dark:text-zinc-400 hover:bg-white dark:hover:bg-zinc-900 hover:shadow-premium'
@@ -84,6 +85,46 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-zinc-950">
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] bg-white dark:bg-zinc-950 md:hidden animate-in slide-in-from-left duration-300">
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-zinc-800">
+              <div className="flex items-center gap-2 text-primary">
+                <span className="material-symbols-outlined text-3xl font-bold">menu_book</span>
+                <h1 className="text-xl font-black tracking-tight">Raiz de Davi</h1>
+              </div>
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-900 rounded-lg"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+              <NavItem to="/dashboard" label="Dashboard" icon="dashboard" onClick={() => setIsMobileMenuOpen(false)} />
+              <NavItem to="/reading" label="Leitura Diária" icon="menu_book" onClick={() => setIsMobileMenuOpen(false)} />
+              <NavItem to="/community" label="Comunidade" icon="groups" onClick={() => setIsMobileMenuOpen(false)} />
+              <NavItem to="/notes" label="Minhas Notas" icon="edit_note" onClick={() => setIsMobileMenuOpen(false)} />
+              {userRole === UserRole.ADMIN && (
+                <NavItem to="/admin" label="Admin" icon="admin_panel_settings" onClick={() => setIsMobileMenuOpen(false)} />
+              )}
+            </nav>
+
+            <div className="p-4 border-t border-slate-200 dark:border-zinc-800">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 px-4 py-3 w-full text-red-500 font-bold hover:bg-red-50 rounded-2xl transition-colors"
+              >
+                <span className="material-symbols-outlined">logout</span>
+                Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
