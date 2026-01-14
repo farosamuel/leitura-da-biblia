@@ -63,44 +63,32 @@ const App: React.FC = () => {
     );
   }
 
+  // Debug: mostrar status da sessão
+  console.log('Session:', session);
+
   const isAdmin = session?.user?.email === 'samuel.bfaro@gmail.com';
   const userRole = isAdmin ? UserRole.ADMIN : UserRole.USER;
 
+  // Versão de debug sem autenticação
   return (
     <Router>
-      <Routes>
-        <Route
-          path="/login"
-          element={!session ? <AuthView /> : <Navigate to="/dashboard" replace />}
-        />
+      <Layout userRole={UserRole.USER}>
+        <Routes>
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="reading" element={<ReadingView />} />
+          <Route path="community" element={<Community />} />
+          <Route path="settings" element={<Settings />} />
 
-        <Route
-          path="/*"
-          element={
-            session ? (
-              <Layout userRole={userRole}>
-                <Routes>
-                  <Route path="dashboard" element={<Dashboard />} />
-                  <Route path="reading" element={<ReadingView />} />
-                  <Route path="community" element={<Community />} />
-                  <Route path="settings" element={<Settings />} />
+          {/* Admin Routes */}
+          <Route path="admin" element={<Navigate to="/admin/participants" replace />} />
+          <Route path="admin/participants" element={<AdminParticipants />} />
+          <Route path="admin/plan" element={<div className="p-8"><h1 className="text-3xl font-black">Definir Plano (Em breve)</h1></div>} />
+          <Route path="admin/reports" element={<div className="p-8"><h1 className="text-3xl font-black">Relatórios (Em breve)</h1></div>} />
+          <Route path="admin/settings" element={<div className="p-8"><h1 className="text-3xl font-black">Admin Config (Em breve)</h1></div>} />
 
-                  {/* Admin Routes */}
-                  <Route path="admin" element={<Navigate to="/admin/participants" replace />} />
-                  <Route path="admin/participants" element={<AdminParticipants />} />
-                  <Route path="admin/plan" element={<div className="p-8"><h1 className="text-3xl font-black">Definir Plano (Em breve)</h1></div>} />
-                  <Route path="admin/reports" element={<div className="p-8"><h1 className="text-3xl font-black">Relatórios (Em breve)</h1></div>} />
-                  <Route path="admin/settings" element={<div className="p-8"><h1 className="text-3xl font-black">Admin Config (Em breve)</h1></div>} />
-
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
-              </Layout>
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-      </Routes>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Layout>
     </Router>
   );
 };

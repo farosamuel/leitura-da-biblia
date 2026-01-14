@@ -22,8 +22,62 @@ export interface BibleChapter {
 class BibleService {
     private baseUrl = 'https://www.abibliadigital.com.br/api';
     private version = 'nvi'; // Nova Versão Internacional
+    private cache: Map<string, { verses: string[], timestamp: number }> = new Map();
+    private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
+
+    private getCacheKey(bookAbbrev: string, chapter: number): string {
+        return `${this.version}_${bookAbbrev.toLowerCase()}_${chapter}`;
+    }
+
+    private isCacheValid(timestamp: number): boolean {
+        return Date.now() - timestamp < this.CACHE_DURATION;
+    }
+
+    private getCachedVerses(key: string): string[] | null {
+        try {
+            const cached = localStorage.getItem(`bible_cache_${key}`);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (this.isCacheValid(data.timestamp)) {
+                    return data.verses;
+                } else {
+                    localStorage.removeItem(`bible_cache_${key}`);
+                }
+            }
+        } catch (error) {
+            console.warn('Erro ao acessar cache local:', error);
+        }
+        return null;
+    }
+
+    private setCachedVerses(key: string, verses: string[]): void {
+        try {
+            const data = {
+                verses,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(`bible_cache_${key}`, JSON.stringify(data));
+        } catch (error) {
+            console.warn('Erro ao salvar no cache local:', error);
+        }
+    }
 
     async getChapterVerses(bookAbbrev: string, chapter: number): Promise<string[]> {
+        const cacheKey = this.getCacheKey(bookAbbrev, chapter);
+
+        // Verificar cache em memória primeiro
+        const memoryCached = this.cache.get(cacheKey);
+        if (memoryCached && this.isCacheValid(memoryCached.timestamp)) {
+            return memoryCached.verses;
+        }
+
+        // Verificar cache local (localStorage)
+        const localCached = this.getCachedVerses(cacheKey);
+        if (localCached) {
+            // Atualizar cache em memória
+            this.cache.set(cacheKey, { verses: localCached, timestamp: Date.now() });
+            return localCached;
+        }
         // Try primary API first
         try {
             const abbrev = bookAbbrev.toLowerCase();
@@ -32,7 +86,11 @@ class BibleService {
             if (response.ok) {
                 const data: BibleChapter = await response.json();
                 if (data.verses && data.verses.length > 0) {
-                    return data.verses.map(v => v.text);
+                    const verses = data.verses.map(v => v.text);
+                    // Cache the result
+                    this.cache.set(cacheKey, { verses, timestamp: Date.now() });
+                    this.setCachedVerses(cacheKey, verses);
+                    return verses;
                 }
             }
         } catch (error) {
@@ -69,7 +127,11 @@ class BibleService {
             if (fallbackResponse.ok) {
                 const fallbackData = await fallbackResponse.json();
                 if (fallbackData.verses && fallbackData.verses.length > 0) {
-                    return fallbackData.verses.map((v: any) => v.text);
+                    const verses = fallbackData.verses.map((v: any) => v.text);
+                    // Cache the result
+                    this.cache.set(cacheKey, { verses, timestamp: Date.now() });
+                    this.setCachedVerses(cacheKey, verses);
+                    return verses;
                 }
             }
         } catch (fallbackError) {
