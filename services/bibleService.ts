@@ -103,7 +103,7 @@ class BibleService {
         const cached = this.apiBibleBibleIdCache.get(normalized);
         if (cached) return cached;
 
-        const overridden = this.apiBibleBibleIdOverrides[normalized as 'nvi' | 'nvt' | 'blt' | 'ol'];
+        const overridden = this.apiBibleBibleIdOverrides[normalized as 'nvi' | 'nvt' | 'ol'];
         if (overridden) {
             this.apiBibleBibleIdCache.set(normalized, overridden);
             return overridden;
