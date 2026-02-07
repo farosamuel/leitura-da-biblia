@@ -69,7 +69,9 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
       // Force clear immediately
       localStorage.clear();
       sessionStorage.clear();
-      navigate('/login');
+      // Hard redirect to ensure router flush
+      window.location.href = '/';
+      return;
 
       // Attempt server logout in background
       await supabase.auth.signOut();

@@ -21,6 +21,8 @@ const ReadingView: React.FC = () => {
   const [currentDay, setCurrentDay] = useState(readingPlanService.getCurrentDay());
   const [dayData, setDayData] = useState<ReadingPlanDay | undefined>(readingPlanService.getPlanForDay(readingPlanService.getCurrentDay()));
   const [verses, setVerses] = useState<string[]>([]);
+  const [chapterStarts, setChapterStarts] = useState<Record<number, number>>({});
+  const [verseDisplayNumbers, setVerseDisplayNumbers] = useState<Record<number, number>>({});
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, verseIndex: number, start: number, end: number, text: string } | null>(null);
   const [highlightMenu, setHighlightMenu] = useState<{ x: number, y: number, id: string, color: string } | null>(null);
@@ -45,8 +47,35 @@ const ReadingView: React.FC = () => {
     setDayData(data);
 
     if (data) {
-      const { bookAbbrev, chapter } = bibleService.parsePassage(data.passage);
-      const content = await bibleService.getChapterVerses(bookAbbrev, chapter, version);
+      const { bookAbbrev, bookName, startChapter, endChapter } = bibleService.parsePassage(data.passage);
+      const chapterNumbers = Array.from(
+        { length: endChapter - startChapter + 1 },
+        (_, index) => startChapter + index
+      );
+      const chapterContents = await Promise.all(
+        chapterNumbers.map((chapterNumber) =>
+          bibleService.getChapterVerses(bookAbbrev, chapterNumber, version, bookName)
+        )
+      );
+
+      const nextChapterStarts: Record<number, number> = {};
+      const nextVerseDisplayNumbers: Record<number, number> = {};
+      let runningIndex = 0;
+      chapterContents.forEach((chapterVerses, index) => {
+        if (chapterVerses.length > 0) {
+          nextChapterStarts[runningIndex] = chapterNumbers[index];
+        }
+
+        chapterVerses.forEach((_, verseOffset) => {
+          nextVerseDisplayNumbers[runningIndex + verseOffset] = verseOffset + 1;
+        });
+
+        runningIndex += chapterVerses.length;
+      });
+
+      const content = chapterContents.flat();
+      setChapterStarts(nextChapterStarts);
+      setVerseDisplayNumbers(nextVerseDisplayNumbers);
       setVerses(content);
 
       // Fetch progress
@@ -68,6 +97,10 @@ const ReadingView: React.FC = () => {
         .eq('user_id', session.user.id);
 
       if (highlightsData) setHighlights(highlightsData);
+    } else {
+      setChapterStarts({});
+      setVerseDisplayNumbers({});
+      setVerses([]);
     }
     setLoading(false);
   }, [session, version]);
@@ -128,7 +161,9 @@ const ReadingView: React.FC = () => {
 
           const textLength = selection.toString().length;
 
-          const verseNumLen = (index + 1).toString().length;
+          const verseNumberElement = verseNode.querySelector('[data-verse-number="true"]') as HTMLElement | null;
+          const verseNumberText = (verseNumberElement?.textContent || `${index + 1}`).trim();
+          const verseNumLen = verseNumberText.length;
           let start = Math.max(0, rawStart - verseNumLen);
           let end = start + textLength;
 
@@ -407,10 +442,10 @@ const ReadingView: React.FC = () => {
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
                 >
-                  <option value="nvi">NVI (Nova Versão Internacional)</option>
-                  <option value="acf">ACF (Almeida Corrigida Fiel)</option>
-                  <option value="aa">AA (Almeida Atualizada)</option>
-                  <option value="kjv">KJV (King James Version)</option>
+                  <option value="nvi">NVI (Nova Versao Internacional)</option>
+                  <option value="nvt">NVT (Nova Versao Transformadora)</option>
+                  <option value="blt">BLT (Biblia Livre Para Todos)</option>
+                  <option value="ol">O Livro</option>
                 </select>
                 <button className="p-2 rounded-xl hover:bg-slate-50 text-slate-400 shrink-0">
                   <span className="material-symbols-outlined">volume_up</span>
@@ -431,14 +466,24 @@ const ReadingView: React.FC = () => {
                 ) : verses.length > 0 ? (
                   <div className="text-slate-700 dark:text-zinc-300 leading-relaxed text-lg font-medium space-y-2 text-justify relative select-text">
                     {verses.map((v, i) => (
-                      <p
-                        key={i}
-                        className="relative"
-                        data-verse-index={i}
-                      >
-                        <span className="text-primary font-black mr-2 text-sm select-none">{i + 1}</span>
-                        {renderVerseContent(v, i)}
-                      </p>
+                      <React.Fragment key={i}>
+                        {chapterStarts[i] !== undefined && i > 0 && (
+                          <div className="my-5 flex items-center gap-3 select-none">
+                            <div className="h-px flex-1 bg-slate-200 dark:bg-zinc-700" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-primary whitespace-nowrap">
+                              Capítulo {chapterStarts[i]}
+                            </span>
+                            <div className="h-px flex-1 bg-slate-200 dark:bg-zinc-700" />
+                          </div>
+                        )}
+                        <p
+                          className="relative"
+                          data-verse-index={i}
+                        >
+                          <span data-verse-number="true" className="text-primary font-black mr-2 text-sm select-none">{verseDisplayNumbers[i] ?? i + 1}</span>
+                          {renderVerseContent(v, i)}
+                        </p>
+                      </React.Fragment>
                     ))}
                   </div>
                 ) : (

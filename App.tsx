@@ -294,15 +294,18 @@ const App: React.FC = () => {
         return;
       }
 
-      // Check if deleted (no profile) or Inactive
-      if (!profile || profile.is_active === false) {
-        console.log("Access denied: " + (profile ? "Inactive" : "No Profile"));
-        setAccessDeniedError('Sua conta está inativa ou excluída. Contate o administrador.');
+      // Check if Inactive (but NOT if profile is simply null/undefined due to slow query)
+      // Only trigger logout if we EXPLICITLY get is_active = false
+      if (profile?.is_active === false) {
+        console.log("Access denied: Account inactive");
+        setAccessDeniedError('Sua conta está inativa. Contate o administrador.');
         setSession(null);
-        // Do not await signOut to prevent blocking UI
         supabase.auth.signOut();
         return;
       }
+
+      // Profile not found is handled by the zombie check in initSession.
+      // Here we just proceed if we didn't get an explicit `is_active = false`.
 
       // Allowed
       setSession(currentSession);
@@ -316,7 +319,7 @@ const App: React.FC = () => {
     let mounted = true;
 
     // FORCE RESET LOGIC
-    const CURRENT_APP_VERSION = '1.3.2'; // Bump this to force logout everyone
+    const CURRENT_APP_VERSION = '1.3.3'; // Bump this to force logout everyone
     const storedVersion = localStorage.getItem('app_version');
 
     if (storedVersion !== CURRENT_APP_VERSION) {
@@ -338,6 +341,26 @@ const App: React.FC = () => {
     const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
+      // ZOMBIE CHECK: If we have a session, verify it against the DB
+      if (session?.user) {
+        console.log("Verifying session validity...");
+        const { error } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        // If generic auth error, or specifically JWT related
+        if (error && (error.code === 'PGRST301' || error.message.includes('JWT') || error.message.includes('token'))) {
+          console.warn("[Auto-Heal] Zombie session detected. Nuking storage.");
+          await supabase.auth.signOut();
+          localStorage.clear();
+          sessionStorage.clear();
+          window.location.reload();
+          return;
+        }
+      }
+
       try {
         await readingPlanService.initialize();
       } catch (e) { console.error("Plan init failed", e); }
@@ -354,15 +377,15 @@ const App: React.FC = () => {
     };
     initSession();
 
-    // Listener for changes
+    // Listener for changes (e.g., login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       if (mounted) {
+        console.log("[Auth] State changed:", _event);
         setSession(newSession);
         setLoading(false);
-
-        if (newSession) {
-          await checkUserStatus(newSession);
-        }
+        // NOTE: Do NOT call checkUserStatus here to avoid repeated profile checks
+        // that can cause false logouts on transient network issues.
+        // Initial check is done in initSession.
       }
     });
 

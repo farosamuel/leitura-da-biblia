@@ -155,9 +155,8 @@ const AdminPlan: React.FC = () => {
 
                 await Promise.all(chunk.map(async (day) => {
                     try {
-                        const { bookAbbrev, chapter } = bibleService.parsePassage(day.passage);
                         // Trigger fetch - logic inside service handles caching to DB
-                        await bibleService.getChapterVerses(bookAbbrev, chapter, 'nvi');
+                        await bibleService.getPassageVerses(day.passage, 'nvi');
                         successCount++;
                     } catch (e) {
                         failCount++;
