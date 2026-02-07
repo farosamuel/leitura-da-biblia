@@ -44,6 +44,8 @@ class BibleService {
             return this.cache.get(cacheKey)!;
         }
 
+        console.log(`[BibleService] Fetching ${cacheKey} (version=${version}, normalized=${normalizedVersion})`);
+
         let fetchedVerses: string[] | null = null;
         let sourceProvider: 'api.bible' | 'abibliadigital' | 'db' | null = null;
 
