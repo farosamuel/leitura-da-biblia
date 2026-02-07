@@ -51,69 +51,63 @@ const AdminParticipants: React.FC = () => {
 
   const closeDetails = () => { setSelectedUser(null); setUserHistory([]); };
 
-  const fetchProfiles = async () => {
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fetchProfiles = async (retries = 3) => {
     setLoading(true);
+    setErrorMsg(null);
 
-    // Fetch all profiles
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('name');
+    try {
+      // Use the new optimized RPC
+      const { data, error } = await supabase.rpc('get_admin_participants');
 
-    if (!profilesData) {
-      setProfiles([]);
-      setLoading(false);
-      return;
-    }
+      if (error) {
+        console.error('Error fetching participants:', error);
+        if (retries > 0) {
+          console.log(`Retrying fetch... (${retries} left)`);
+          setTimeout(() => fetchProfiles(retries - 1), 1000); // Retry after 1s
+          return;
+        }
+        setErrorMsg(`Erro ao carregar: ${error.message}`);
+        setProfiles([]);
+      } else if (data) {
+        const usersWithProgress: UserWithProgress[] = data.map((p: any) => {
+          const completedDays = p.completed_days || 0;
 
-    // Fetch progress using the secure RPC function
-    const { data: progressData, error: rpcError } = await supabase
-      .rpc('get_participants_progress');
+          // Determine status
+          let status: 'em_dia' | 'atrasado' | 'concluido' = 'em_dia';
+          if (completedDays >= totalDays) {
+            status = 'concluido';
+          } else if (completedDays < currentDay - 1) {
+            status = 'atrasado';
+          }
 
-    if (rpcError) {
-      console.error('SERVER RPC ERROR:', rpcError);
-    }
-
-    // Create a map for faster lookup
-    const progressMap = new Map();
-    if (progressData) {
-      progressData.forEach((p: any) => {
-        progressMap.set(p.user_id, p);
-      });
-    }
-
-    // Map progress to users
-    const usersWithProgress: UserWithProgress[] = profilesData.map(profile => {
-      const userStats = progressMap.get(profile.id);
-      const completedDays = userStats?.completed_days || 0;
-      const lastReadDay = userStats?.last_read_day || 0;
-
-      const progressPercent = Math.round((completedDays / totalDays) * 100);
-
-      // Determine status
-      let status: 'em_dia' | 'atrasado' | 'concluido' = 'em_dia';
-      if (completedDays >= totalDays) {
-        status = 'concluido';
-      } else if (completedDays < currentDay - 1) {
-        // User is behind if they haven't completed at least yesterday's reading
-        status = 'atrasado';
+          return {
+            id: p.id,
+            name: p.name || 'Sem nome',
+            email: p.email || '',
+            avatar_url: p.avatar_url,
+            completedDays: completedDays,
+            lastReadDay: p.last_read_day || 0,
+            status,
+            progressPercent: Math.round((completedDays / totalDays) * 100),
+            is_active: p.is_active
+          };
+        });
+        setProfiles(usersWithProgress);
+        setLoading(false);
       }
-
-      return {
-        id: profile.id,
-        name: profile.name || 'Sem nome',
-        email: profile.email || '',
-        avatar_url: profile.avatar_url,
-        completedDays,
-        lastReadDay,
-        status,
-        progressPercent,
-        is_active: profile.is_active !== false, // Default to true if null
-      };
-    });
-
-    setProfiles(usersWithProgress);
-    setLoading(false);
+    } catch (e) {
+      console.error("Exception fetching profiles:", e);
+      if (retries > 0) {
+        setTimeout(() => fetchProfiles(retries - 1), 1000);
+      } else {
+        setErrorMsg('Erro de conexão.');
+        setLoading(false);
+      }
+    } finally {
+      // Managed inside
+    }
   };
 
   useEffect(() => {
@@ -264,6 +258,14 @@ const AdminParticipants: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {errorMsg && (
+          <div className="m-6 p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-2xl flex items-center gap-3 text-red-600 dark:text-red-400">
+            <span className="material-symbols-outlined">error</span>
+            <span className="font-bold">{errorMsg}</span>
+            <button onClick={() => fetchProfiles(3)} className="ml-auto text-sm underline hover:text-red-700">Tentar Novamente</button>
+          </div>
+        )}
 
         {/* MOBILE CARD VIEW */}
         <div className="block md:hidden divide-y divide-slate-50 dark:divide-zinc-800">

@@ -38,11 +38,8 @@ const Dashboard: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
 
-      // Aguarda sincronização do plano
-      await readingPlanService.ensureSynced();
-
       if (session?.user) {
-        // Fetch profile
+        // Fetch profile immediately
         const { data: profileData } = await supabase
           .from('profiles')
           .select('*')
@@ -51,6 +48,7 @@ const Dashboard: React.FC = () => {
 
         setProfile(profileData);
 
+        // Fetch progress in background/parallel or after profile
         // Fetch progress for this user (Total count)
         const { count, error } = await supabase
           .from('reading_progress')
@@ -77,8 +75,6 @@ const Dashboard: React.FC = () => {
           weekData.forEach(record => {
             if (record.read_at) {
               const date = new Date(record.read_at);
-              // Adjust for timezone offset if necessary, but usually UTC from DB to local Date works for getDay if stored correctly.
-              // Just simply using getDay() on the Date object created from ISO string
               const dayIndex = date.getDay(); // 0-6 (Sun-Sat)
               newWeeklyProgress[dayIndex] = true;
             }
@@ -87,13 +83,22 @@ const Dashboard: React.FC = () => {
         }
       }
 
+      // Sync plan in background so it doesn't block UI profile (or await it if critical for logic below)
+      // But we just moved identifying info up.
+      try {
+        await readingPlanService.ensureSynced();
+      } catch (e) {
+        console.error("Failed to sync plan", e);
+      }
+
       // Fetch top readers via secure RPC function
       const { data: leaderboard, error } = await supabase.rpc('get_leaderboard');
 
       if (!error && leaderboard) {
         setTopReaders(leaderboard.map((l: any) => ({
           name: l.name || 'Sem nome', // Fallback for name
-          days: l.days_count
+          days: l.days_count,
+          avatar_url: l.avatar_url
         })));
       } else {
         console.warn("Failed to fetch leaderboard (RPC function might be missing)", error);
@@ -249,19 +254,28 @@ const Dashboard: React.FC = () => {
             <div className="space-y-4">
               {topReaders.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-4">Nenhum leitor ainda</p>
-              ) : topReaders.map((reader, idx) => {
+              ) : topReaders.map((reader: any, idx) => {
                 const colors = [
                   'bg-yellow-100 text-yellow-700',
                   'bg-slate-100 text-slate-700',
                   'bg-orange-100 text-orange-700'
                 ];
                 const icons = ['emoji_events', 'looks_two', 'looks_3'];
+
                 return (
                   <div key={idx} className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
                     <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm ${colors[idx] || colors[2]}`}>
-                        {reader.name.split(' ').map(n => n[0]).join('')}
-                      </div>
+                      {reader.avatar_url ? (
+                        <img
+                          src={reader.avatar_url}
+                          alt={reader.name}
+                          className="h-10 w-10 rounded-full object-cover border-2 border-white dark:border-zinc-800"
+                        />
+                      ) : (
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm ${colors[idx] || colors[2]}`}>
+                          {reader.name.split(' ').map((n: string) => n[0]).join('')}
+                        </div>
+                      )}
                       <div>
                         <p className="text-sm font-bold text-slate-900 dark:text-white">{reader.name}</p>
                         <p className="text-xs text-slate-500">{reader.days} dias</p>

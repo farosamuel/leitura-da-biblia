@@ -16,11 +16,19 @@ class ReadingPlanService {
     private syncPromise: Promise<void> | null = null;
 
     constructor() {
-        this.syncPromise = this.syncWithSupabase();
+        // Do not auto-sync. Wait for explicit initialization.
     }
 
-    async syncWithSupabase(): Promise<void> {
+    public async initialize(): Promise<void> {
+        if (!this.syncPromise) {
+            this.syncPromise = this.syncWithSupabase();
+        }
+        return this.syncPromise;
+    }
+
+    async syncWithSupabase(retries = 3): Promise<void> {
         try {
+            console.log('ReadingPlanService: Iniciando sincronização...');
             const { data, error } = await supabase
                 .from('reading_plan')
                 .select('*')
@@ -39,9 +47,15 @@ class ReadingPlanService {
                 }));
                 this.initialized = true;
                 console.log('ReadingPlanService: Sincronizado com Supabase:', this.plan.length, 'dias');
+            } else {
+                console.warn('ReadingPlanService: Nenhum dado retornado do Supabase, usando JSON local.');
             }
         } catch (err) {
-            console.error('ReadingPlanService: Erro ao sincronizar:', err);
+            console.error('ReadingPlanService: Erro ao sincronizar (tentativa ' + (4 - retries) + '):', err);
+            if (retries > 0) {
+                await new Promise(r => setTimeout(r, 1000)); // Wait 1s
+                return this.syncWithSupabase(retries - 1);
+            }
         }
     }
 

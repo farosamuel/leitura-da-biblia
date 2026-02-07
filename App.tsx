@@ -9,8 +9,12 @@ import Community from './views/Community';
 import NotesView from './views/NotesView';
 import AdminParticipants from './views/admin/AdminParticipants';
 import AdminPlan from './views/admin/AdminPlan';
+import { readingPlanService } from './services/readingPlanService';
 import { supabase } from './services/supabaseClient';
 import { ThemeProvider } from './contexts/ThemeContext';
+
+// Settings page with real data
+import ImageCropper from './components/ImageCropper';
 
 // Settings page with real data
 const Settings = () => {
@@ -18,23 +22,40 @@ const Settings = () => {
   const [session, setSession] = React.useState<any>(null);
   const [name, setName] = React.useState('');
   const [saving, setSaving] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+
+  // Crop state
+  const [cropModalOpen, setCropModalOpen] = React.useState(false);
+  const [selectedImageSrc, setSelectedImageSrc] = React.useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     const init = async () => {
+      console.log("Settings: Initializing...");
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
 
       if (session?.user) {
-        const { data } = await supabase
+        console.log("Settings: Session found for user", session.user.id);
+        const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
 
-        if (data) {
+        if (error) {
+          console.error("Settings: Error fetching profile", error);
+        } else if (data) {
+          console.log("Settings: Profile loaded", data);
           setProfile(data);
           setName(data.name || '');
+        } else {
+          console.warn("Settings: No profile data found for ID", session.user.id);
         }
+      } else {
+        console.log("Settings: No session found");
       }
     };
     init();
@@ -52,51 +73,195 @@ const Settings = () => {
     if (error) {
       alert('Erro ao salvar: ' + error.message);
     } else {
-      alert('Perfil atualizado com sucesso!');
+      showSuccess('Perfil atualizado com sucesso!');
     }
     setSaving(false);
   };
 
+  const showSuccess = (msg: string) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      const file = event.target.files[0];
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        setSelectedImageSrc(reader.result?.toString() || null);
+        setCropModalOpen(true);
+      });
+      reader.readAsDataURL(file);
+      // Clear input so same file can be selected again
+      event.target.value = '';
+    }
+  };
+
+  const handleCropComplete = async (croppedImageBlob: Blob) => {
+    setCropModalOpen(false);
+    setUploading(true);
+
+    try {
+      let currentUserId = session?.user?.id;
+
+      // Fallback: fetch user if session is missing
+      if (!currentUserId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          currentUserId = user.id;
+        } else {
+          throw new Error("Usuário não autenticado.");
+        }
+      }
+
+      const fileExt = 'jpg'; // We export as jpeg in getCroppedImg
+      const fileName = `${currentUserId}/${Date.now()}.${fileExt}`;
+      const file = new File([croppedImageBlob], fileName, { type: 'image/jpeg' });
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Force a cache-busting query param to ensure immediate UI update
+      const publicUrlWithTimestamp = `${publicUrl}?t=${Date.now()}`;
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrlWithTimestamp, updated_at: new Date().toISOString() })
+        .eq('id', currentUserId);
+
+      if (updateError) throw updateError;
+
+      setProfile((prev: any) => ({ ...prev, avatar_url: publicUrlWithTimestamp }));
+      showSuccess('Foto de perfil atualizada!');
+    } catch (error: any) {
+      alert('Erro ao atualizar foto: ' + error.message);
+    } finally {
+      setUploading(false);
+      setSelectedImageSrc(null);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 p-4">
-      <h1 className="text-3xl font-black">Configurações</h1>
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 border border-slate-200 dark:border-zinc-800 shadow-sm space-y-6">
-        <div className="flex items-center gap-4">
-          {profile?.avatar_url ? (
-            <img src={profile.avatar_url} className="size-20 rounded-full object-cover" alt="Avatar" />
-          ) : (
-            <div className="size-20 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary text-2xl">
-              {name ? name[0].toUpperCase() : 'U'}
+      {/* Success Toast */}
+      {successMessage && (
+        <div className="fixed top-24 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-2xl shadow-xl shadow-green-500/20 flex items-center gap-3 animate-in slide-in-from-right fade-in duration-300">
+          <span className="material-symbols-outlined fill-1">check_circle</span>
+          <span className="font-bold">{successMessage}</span>
+        </div>
+      )}
+
+      <h1 className="text-3xl font-black text-slate-900 dark:text-white">Configurações</h1>
+
+      <div className="bg-white dark:bg-zinc-900 rounded-[32px] p-8 md:p-10 border border-slate-100 dark:border-zinc-800 shadow-premium relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary to-primary-600" />
+
+        <div className="flex flex-col md:flex-row items-center gap-8 mb-10">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+            accept="image/*"
+          />
+          <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+            <div className={`size-32 rounded-full p-1 border-2 ${uploading ? 'border-primary border-dashed' : 'border-slate-100 dark:border-zinc-800'} transition-all`}>
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover group-hover:opacity-80 transition-opacity" alt="Avatar" />
+              ) : (
+                <div className="w-full h-full rounded-full bg-slate-50 dark:bg-zinc-800 flex items-center justify-center font-black text-slate-300 dark:text-zinc-600 text-4xl group-hover:bg-slate-100 dark:group-hover:bg-zinc-700 transition-colors">
+                  {name ? name[0].toUpperCase() : 'U'}
+                </div>
+              )}
             </div>
-          )}
-          <button className="text-primary font-bold hover:underline">Alterar Foto</button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase">Nome Completo</label>
-            <input
-              className="w-full border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+
+            <div className="absolute bottom-0 right-0 bg-primary text-white p-2.5 rounded-xl shadow-lg shadow-primary/30 group-hover:scale-110 transition-transform">
+              <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+            </div>
+
+            {uploading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-zinc-900/80 rounded-full backdrop-blur-sm z-10">
+                <span className="material-symbols-outlined text-primary text-4xl animate-spin">progress_activity</span>
+              </div>
+            )}
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
-            <input
-              className="w-full border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 bg-slate-50 dark:bg-zinc-800/50 text-slate-500 dark:text-slate-400"
-              value={profile?.email || session?.user?.email || ''}
-              disabled
-            />
+
+          <div className="text-center md:text-left space-y-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Sua Foto de Perfil</h2>
+            <p className="text-slate-500 max-w-sm">
+              Clique na foto para alterar. Isso será exibido no seu perfil e na comunidade.
+            </p>
           </div>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-primary text-white px-8 py-3 rounded-xl font-bold hover:bg-primary-600 transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Salvando...' : 'Salvar Alterações'}
-        </button>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Nome Completo</label>
+            <div className="relative group">
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">person</span>
+              <input
+                className="w-full border-2 border-slate-100 dark:border-zinc-800 rounded-2xl pl-12 pr-4 py-4 bg-slate-50 dark:bg-zinc-800/50 text-slate-900 dark:text-white font-bold focus:border-primary focus:bg-white dark:focus:bg-zinc-900 outline-none transition-all placeholder:font-normal"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Seu nome"
+              />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Email</label>
+            <div className="relative">
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">mail</span>
+              <input
+                className="w-full border border-slate-200 dark:border-zinc-800 rounded-2xl pl-12 pr-4 py-4 bg-slate-50 dark:bg-zinc-800/30 text-slate-500 dark:text-slate-500 cursor-not-allowed"
+                value={profile?.email || session?.user?.email || ''}
+                disabled
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-6 border-t border-slate-100 dark:border-zinc-800">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-primary text-white px-10 py-4 rounded-2xl font-black tracking-wide hover:bg-primary-600 transition-all shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 disabled:opacity-50 disabled:shadow-none flex items-center gap-3"
+          >
+            {saving ? (
+              <>
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                Salvando...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined">save</span>
+                SALVAR ALTERAÇÕES
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {cropModalOpen && selectedImageSrc && (
+        <ImageCropper
+          imageSrc={selectedImageSrc}
+          onCropComplete={handleCropComplete}
+          onCancel={() => {
+            setCropModalOpen(false);
+            setSelectedImageSrc(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -123,11 +288,9 @@ const App: React.FC = () => {
         .maybeSingle();
 
       if (error) {
-        console.error("Error checking status:", error);
-        setAccessDeniedError('Erro ao verificar status da conta. Tente novamente.');
-        setSession(null);
-        // Do not await signOut to prevent blocking UI
-        supabase.auth.signOut();
+        // If it's a network error or something transient, DO NOT log them out immediately.
+        console.error("Error checking status (transient):", error);
+        // We keep the session for now. The UI might be limited but we don't nuking the session.
         return;
       }
 
@@ -144,19 +307,41 @@ const App: React.FC = () => {
       // Allowed
       setSession(currentSession);
     } catch (err) {
-      console.error("Unexpected error:", err);
-      setAccessDeniedError('Erro inesperado de autenticação.');
-      setSession(null);
-      supabase.auth.signOut();
+      console.error("Unexpected error in checkUserStatus:", err);
+      // Do not sign out on unexpected runtime errors, proceed with session
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
+    // FORCE RESET LOGIC
+    const CURRENT_APP_VERSION = '1.3.2'; // Bump this to force logout everyone
+    const storedVersion = localStorage.getItem('app_version');
+
+    if (storedVersion !== CURRENT_APP_VERSION) {
+      console.log(`New version detected (${CURRENT_APP_VERSION}). performing cleanup...`);
+      localStorage.clear(); // Wipes old state
+      sessionStorage.clear();
+
+      // Attempt sign out then reload
+      supabase.auth.signOut().finally(() => {
+        localStorage.setItem('app_version', CURRENT_APP_VERSION);
+        if (mounted) {
+          window.location.reload();
+        }
+      });
+      return; // Stop initialization
+    }
+
     // Initial check
     const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
+
+      try {
+        await readingPlanService.initialize();
+      } catch (e) { console.error("Plan init failed", e); }
+
       if (mounted) {
         setSession(session);
         setLoading(false); // OPTIMISTIC: Unblock UI immediately for better UX

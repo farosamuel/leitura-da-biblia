@@ -23,7 +23,7 @@ const AdminPlan: React.FC = () => {
     };
 
     // --- AÇÕES ---
-    const fetchPlan = async () => {
+    const fetchPlan = async (retries = 3) => {
         setLoading(true);
         addLog('Buscando dados no Supabase...');
         try {
@@ -38,14 +38,29 @@ const AdminPlan: React.FC = () => {
 
             if (error) {
                 addLog(`ERRO (Status ${status}): ${error.message}`);
+                if (retries > 0) {
+                    addLog(`Tentando novamente... (${retries})`);
+                    setTimeout(() => fetchPlan(retries - 1), 1000);
+                    return;
+                }
                 return;
             }
             addLog(`Sucesso! ${data?.length || 0} dias no banco.`);
-            if (data) setPlanDays(data);
+            if (data) {
+                setPlanDays(data);
+                setLoading(false);
+            }
         } catch (err: any) {
             addLog(`Falha no fetch: ${err.message}`);
+            if (retries > 0) {
+                setTimeout(() => fetchPlan(retries - 1), 1000);
+            } else {
+                setLoading(false);
+            }
         } finally {
-            setLoading(false);
+            if (retries === 0 || loading) {
+                // Cleanup driven by success blocks mainly
+            }
         }
     };
 
@@ -111,6 +126,59 @@ const AdminPlan: React.FC = () => {
         }
     };
 
+    const handleCacheContent = async () => {
+        setInitializing(true); // Reusing initializing state to lock buttons
+        setShowConfirm(false);
+        setLogs(['--- INICIANDO CACHE DE CONTEÚDO ---']);
+
+        try {
+            const { data: plan, error } = await supabase
+                .from('reading_plan')
+                .select('*')
+                .order('day_number');
+
+            if (!plan) throw new Error('Plano não carregado.');
+
+            addLog(`Encontrados ${plan.length} dias. Iniciando download...`);
+
+            // Dynamically import bibleService to avoid circular dep issues if any, or just use global
+            const { bibleService } = await import('../../services/bibleService');
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // Process in chunks to avoid rate limits
+            const CHUNK_SIZE = 5;
+            for (let i = 0; i < plan.length; i += CHUNK_SIZE) {
+                const chunk = plan.slice(i, i + CHUNK_SIZE);
+                addLog(`Processando dias ${chunk[0].day_number} a ${chunk[chunk.length - 1].day_number}...`);
+
+                await Promise.all(chunk.map(async (day) => {
+                    try {
+                        const { bookAbbrev, chapter } = bibleService.parsePassage(day.passage);
+                        // Trigger fetch - logic inside service handles caching to DB
+                        await bibleService.getChapterVerses(bookAbbrev, chapter, 'nvi');
+                        successCount++;
+                    } catch (e) {
+                        failCount++;
+                        console.error(`Erro cache dia ${day.day_number}`, e);
+                    }
+                }));
+
+                // Small delay to be nice to the API
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            addLog(`--- CONCLUÍDO ---`);
+            addLog(`Sucesso: ${successCount} | Falhas: ${failCount}`);
+
+        } catch (err: any) {
+            addLog(`FALHA GERAL: ${err.message}`);
+        } finally {
+            setInitializing(false);
+        }
+    };
+
     // --- EFEITOS ---
     useEffect(() => {
         fetchPlan();
@@ -148,6 +216,14 @@ const AdminPlan: React.FC = () => {
                         className="px-6 py-3 border-2 border-red-100 text-red-500 rounded-2xl font-bold hover:bg-red-50 transition-all disabled:opacity-50"
                     >
                         LIMPAR
+                    </button>
+                    <button
+                        onClick={handleCacheContent}
+                        disabled={initializing}
+                        className="px-6 py-3 border-2 border-indigo-100 text-indigo-500 rounded-2xl font-bold hover:bg-indigo-50 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                        <span className="material-symbols-outlined">cloud_download</span>
+                        BAIXAR CONTEÚDO
                     </button>
                     {!showConfirm ? (
                         <button

@@ -65,8 +65,17 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
+    try {
+      // Force clear immediately
+      localStorage.clear();
+      sessionStorage.clear();
+      navigate('/login');
+
+      // Attempt server logout in background
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   const isActive = (path: string) => location.pathname === path;
@@ -210,9 +219,15 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole }) => {
         {location.pathname.startsWith('/admin') && (
           <aside className="hidden md:flex w-64 border-r border-slate-200 dark:border-zinc-800 flex-col gap-2 p-6 shrink-0 bg-white dark:bg-zinc-950">
             <div className="flex items-center gap-3 mb-6 p-2">
-              <img src={IMAGES.ADMIN_AVATAR} alt="Admin" className="size-12 rounded-full ring-2 ring-primary/20" />
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="Admin" className="size-12 rounded-full ring-2 ring-primary/20 object-cover" />
+              ) : (
+                <div className="size-12 rounded-full ring-2 ring-primary/20 bg-primary/10 flex items-center justify-center font-bold text-primary text-lg">
+                  {(profile?.name || 'A')[0]}
+                </div>
+              )}
               <div className="flex flex-col">
-                <h3 className="font-bold text-sm">Admin Leitura</h3>
+                <h3 className="font-bold text-sm">{profile?.name || 'Admin Leitura'}</h3>
                 <p className="text-xs text-slate-500">Plano Anual 2024</p>
               </div>
             </div>

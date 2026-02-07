@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 
 export interface BibleVerse {
     number: number;
@@ -25,11 +26,35 @@ class BibleService {
     private cache = new Map<string, string[]>();
 
     async getChapterVerses(bookAbbrev: string, chapter: number, version: string = this.defaultVersion): Promise<string[]> {
-        const cacheKey = `${bookAbbrev.toLowerCase()}-${chapter}-${version}`;
+        const cacheKey = `${bookAbbrev.toLowerCase()}-${chapter}-${version.toLowerCase()}`;
+
+        // 1. Memory Cache
         if (this.cache.has(cacheKey)) {
-            console.log(`Serving ${cacheKey} from cache`);
+            console.log(`[BibleService] Serving ${cacheKey} from memory cache`);
             return this.cache.get(cacheKey)!;
         }
+
+        // 2. Supabase Cache (Database)
+        try {
+            const { data, error } = await supabase
+                .from('bible_chapters')
+                .select('content')
+                .eq('book', bookAbbrev.toLowerCase())
+                .eq('chapter', chapter)
+                .eq('version', version.toLowerCase())
+                .maybeSingle();
+
+            if (data?.content) {
+                console.log(`[BibleService] Serving ${cacheKey} from Supabase DB`);
+                const verses = data.content; // It's already an array of strings
+                this.cache.set(cacheKey, verses);
+                return verses;
+            }
+        } catch (dbError) {
+            console.warn("[BibleService] DB Check failed, proceeding to API", dbError);
+        }
+
+        // 3. External API Fetch (with fallback logic)
         // Try bible-api.com only for supported versions
         const bibleApiMapping: Record<string, string> = {
             'aa': 'almeida', // Default Almeida on bible-api
@@ -38,6 +63,8 @@ class BibleService {
         };
 
         const mappedVersion = bibleApiMapping[version.toLowerCase()];
+        let fetchedVerses: string[] = [];
+        let success = false;
 
         if (mappedVersion) {
             try {
@@ -64,15 +91,13 @@ class BibleService {
 
                 const bookName = bookNameMap[bookAbbrev.toLowerCase()] || bookAbbrev;
                 const fallbackUrl = `https://bible-api.com/${bookName}+${chapter}?translation=${mappedVersion}`;
-                // Add cache busting to prevent stale responses
                 const response = await fetch(fallbackUrl);
 
                 if (response.ok) {
                     const data = await response.json();
                     if (data.verses && data.verses.length > 0) {
-                        const verses = data.verses.map((v: any) => v.text.replace(/\s+$/, ''));
-                        this.cache.set(cacheKey, verses);
-                        return verses;
+                        fetchedVerses = data.verses.map((v: any) => v.text.replace(/\s+$/, ''));
+                        success = true;
                     }
                 }
             } catch (error) {
@@ -81,59 +106,78 @@ class BibleService {
         }
 
         // Fallback to abibliadigital
-        try {
-            const abbrev = bookAbbrev.toLowerCase();
-            const response = await fetch(`${this.baseUrl}/verses/${version}/${abbrev}/${chapter}`);
+        if (!success) {
+            try {
+                const abbrev = bookAbbrev.toLowerCase();
+                const response = await fetch(`${this.baseUrl}/verses/${version}/${abbrev}/${chapter}`);
 
-            if (response.ok) {
-                const data: BibleChapter = await response.json();
-                if (data.verses && data.verses.length > 0) {
-                    const verses = data.verses.map(v => v.text);
-                    this.cache.set(cacheKey, verses);
-                    return verses;
+                if (response.ok) {
+                    const data: BibleChapter = await response.json();
+                    if (data.verses && data.verses.length > 0) {
+                        fetchedVerses = data.verses.map(v => v.text);
+                        success = true;
+                    }
+                } else {
+                    console.warn(`Abibliadigital returned status ${response.status}, trying final fallback.`);
                 }
+            } catch (fallbackError) {
+                console.error('Fallback API (abibliadigital) failed, trying final fallback (Almeida):', fallbackError);
             }
-            // If we get here, response wasn't OK or data was empty. Proceed to final fallback.
-            console.warn(`Abibliadigital returned status ${response.status}, trying final fallback.`);
-        } catch (fallbackError) {
-            console.error('Fallback API (abibliadigital) failed, trying final fallback (Almeida):', fallbackError);
         }
 
         // Final fallback: Use bible-api.com with Almeida
-        // This ensures we at least show Portuguese text instead of nothing or English
-        try {
-            // Map abbreviations to full book names for bible-api.com
-            const bookNameMap: Record<string, string> = {
-                'gn': 'genesis', 'ex': 'exodus', 'lv': 'leviticus', 'nm': 'numbers',
-                'dt': 'deuteronomy', 'js': 'joshua', 'jz': 'judges', 'rt': 'ruth',
-                '1sm': '1samuel', '2sm': '2samuel', '1rs': '1kings', '2rs': '2kings',
-                '1cr': '1chronicles', '2cr': '2chronicles', 'sl': 'psalms', 'pv': 'proverbs',
-                'ec': 'ecclesiastes', 'ct': 'songofsolomon', 'is': 'isaiah', 'jr': 'jeremiah',
-                'lm': 'lamentations', 'ez': 'ezekiel', 'dn': 'daniel', 'os': 'hosea',
-                'jl': 'joel', 'am': 'amos', 'ob': 'obadiah', 'jn': 'jonah', 'mq': 'micah',
-                'na': 'nahum', 'hc': 'habakkuk', 'sf': 'zephaniah', 'ag': 'haggai',
-                'zc': 'zechariah', 'ml': 'malachi', 'mt': 'matthew', 'mc': 'mark',
-                'lc': 'luke', 'jo': 'john', 'at': 'acts', 'rm': 'romans',
-                '1co': '1corinthians', '2co': '2corinthians', 'gl': 'galatians',
-                'ef': 'ephesians', 'fp': 'philippians', 'cl': 'colossians',
-                '1ts': '1thessalonians', '2ts': '2thessalonians', '1ti': '1timothy',
-                '2ti': '2timothy', 'tt': 'titus', 'fm': 'philemon', 'hb': 'hebrews',
-                'tg': 'james', '1pe': '1peter', '2pe': '2peter', '1jo': '1john',
-                '2jo': '2jo', '3jo': '3jo', 'jd': 'jude', 'ap': 'revelation',
-                'ne': 'nehemiah', 'et': 'esther'
-            };
-            const bookName = bookNameMap[bookAbbrev.toLowerCase()] || bookAbbrev;
-            const finalResponse = await fetch(`https://bible-api.com/${bookName}+${chapter}?translation=almeida`);
-            if (finalResponse.ok) {
-                const data = await finalResponse.json();
-                if (data.verses && data.verses.length > 0) {
-                    const verses = data.verses.map((v: any) => v.text.replace(/\s+$/, ''));
-                    this.cache.set(cacheKey, verses); // Cache this as the result for now
-                    return verses;
+        if (!success) {
+            try {
+                // ... (existing helper map duplicated for safety or extracted) ...
+                // Simplified for brevity, reusing logic or map if possible, but keeping robust here:
+                const bookNameMap: Record<string, string> = {
+                    'gn': 'genesis', 'ex': 'exodus', 'lv': 'leviticus', 'nm': 'numbers',
+                    'dt': 'deuteronomy', 'js': 'joshua', 'jz': 'judges', 'rt': 'ruth',
+                    '1sm': '1samuel', '2sm': '2samuel', '1rs': '1kings', '2rs': '2kings',
+                    '1cr': '1chronicles', '2cr': '2chronicles', 'sl': 'psalms', 'pv': 'proverbs',
+                    'ec': 'ecclesiastes', 'ct': 'songofsolomon', 'is': 'isaiah', 'jr': 'jeremiah',
+                    'lm': 'lamentations', 'ez': 'ezekiel', 'dn': 'daniel', 'os': 'hosea',
+                    'jl': 'joel', 'am': 'amos', 'ob': 'obadiah', 'jn': 'jonah', 'mq': 'micah',
+                    'na': 'nahum', 'hc': 'habakkuk', 'sf': 'zephaniah', 'ag': 'haggai',
+                    'zc': 'zechariah', 'ml': 'malachi', 'mt': 'matthew', 'mc': 'mark',
+                    'lc': 'luke', 'jo': 'john', 'at': 'acts', 'rm': 'romans',
+                    '1co': '1corinthians', '2co': '2corinthians', 'gl': 'galatians',
+                    'ef': 'ephesians', 'fp': 'philippians', 'cl': 'colossians',
+                    '1ts': '1thessalonians', '2ts': '2thessalonians', '1ti': '1timothy',
+                    '2ti': '2timothy', 'tt': 'titus', 'fm': 'philemon', 'hb': 'hebrews',
+                    'tg': 'james', '1pe': '1peter', '2pe': '2peter', '1jo': '1john',
+                    '2jo': '2jo', '3jo': '3jo', 'jd': 'jude', 'ap': 'revelation',
+                    'ne': 'nehemiah', 'et': 'esther'
+                };
+                const bookName = bookNameMap[bookAbbrev.toLowerCase()] || bookAbbrev;
+                const finalResponse = await fetch(`https://bible-api.com/${bookName}+${chapter}?translation=almeida`);
+                if (finalResponse.ok) {
+                    const data = await finalResponse.json();
+                    if (data.verses && data.verses.length > 0) {
+                        fetchedVerses = data.verses.map((v: any) => v.text.replace(/\s+$/, ''));
+                        success = true;
+                    }
                 }
+            } catch (finalError) {
+                console.error("All APIs failed", finalError);
             }
-        } catch (finalError) {
-            console.error("All APIs failed", finalError);
+        }
+
+        if (success && fetchedVerses.length > 0) {
+            // 4. Save to Supabase (Lazy Cache)
+            // Fire and forget - don't await blocking user
+            supabase.from('bible_chapters').insert({
+                book: bookAbbrev.toLowerCase(),
+                chapter: chapter,
+                version: version.toLowerCase(),
+                content: fetchedVerses
+            }).then(({ error }) => {
+                if (error) console.error("Error caching to DB:", error);
+                else console.log(`[BibleService] Cached ${cacheKey} to Supabase`);
+            });
+
+            this.cache.set(cacheKey, fetchedVerses);
+            return fetchedVerses;
         }
 
         return [];
