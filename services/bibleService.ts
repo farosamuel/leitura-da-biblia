@@ -24,13 +24,12 @@ class BibleService {
     private baseUrl = 'https://www.abibliadigital.com.br/api';
     private apiBibleBaseUrl = 'https://rest.api.bible/v1';
     private defaultVersion = 'nvi'; // Nova Versão Internacional
-    private supportedVersions = ['nvi', 'nvt', 'blt', 'ol'] as const;
+    private supportedVersions = ['nvi', 'nvt', 'ol'] as const;
     private authToken = import.meta.env.VITE_ABIBLIA_TOKEN || '';
     private apiBibleKey = import.meta.env.VITE_API_BIBLE_KEY || '';
-    private apiBibleBibleIdOverrides: Record<'nvi' | 'nvt' | 'blt' | 'ol', string> = {
+    private apiBibleBibleIdOverrides: Record<'nvi' | 'nvt' | 'ol', string> = {
         nvi: import.meta.env.VITE_API_BIBLE_NVI_ID || '',
         nvt: import.meta.env.VITE_API_BIBLE_NVT_ID || '',
-        blt: import.meta.env.VITE_API_BIBLE_BLT_ID || '',
         ol: import.meta.env.VITE_API_BIBLE_OL_ID || ''
     };
     private apiBibleBibleIdCache = new Map<string, string>();
@@ -127,7 +126,6 @@ class BibleService {
             const keywordsByVersion: Record<string, string[]> = {
                 nvi: ['ptnvi', 'nvi', 'nova versao internacional'],
                 nvt: ['nvt', 'nova versao transformadora'],
-                blt: ['blt', 'biblia livre para todos'],
                 ol: ['ol', 'o livro']
             };
             const wantedKeywords = keywordsByVersion[normalized] || [normalized];

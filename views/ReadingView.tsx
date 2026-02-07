@@ -444,7 +444,6 @@ const ReadingView: React.FC = () => {
                 >
                   <option value="nvi">NVI (Nova Versao Internacional)</option>
                   <option value="nvt">NVT (Nova Versao Transformadora)</option>
-                  <option value="blt">BLT (Biblia Livre Para Todos)</option>
                   <option value="ol">O Livro</option>
                 </select>
                 <button className="p-2 rounded-xl hover:bg-slate-50 text-slate-400 shrink-0">
