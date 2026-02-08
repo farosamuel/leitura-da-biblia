@@ -185,9 +185,13 @@ class BibleService {
 
         const bibleId = await this.resolveApiBibleId(version);
         const bookId = this.getApiBibleBookId(bookAbbrev, bookName);
-        if (!bibleId || !bookId) return null;
+        if (!bibleId || !bookId) {
+            console.warn(`[BibleService] Missing bibleId or bookId: bibleId=${bibleId}, bookId=${bookId}`);
+            return null;
+        }
 
         const chapterId = `${bookId}.${chapter}`;
+        console.log(`[BibleService] Trying chapter endpoint for ${chapterId} with bibleId=${bibleId}`);
         const chapterParams = new URLSearchParams({
             'content-type': 'json',
             'include-notes': 'false',
@@ -209,11 +213,16 @@ class BibleService {
                 const chapterPayload = await chapterResponse.json();
                 const parsed = this.extractVersesFromApiBibleContent(chapterPayload?.data?.content);
                 if (parsed && parsed.length > 0) {
+                    console.log(`[BibleService] Chapter endpoint SUCCESS: got ${parsed.length} verses for ${chapterId}`);
                     return parsed;
+                } else {
+                    console.log(`[BibleService] Chapter endpoint returned 0 verses for ${chapterId}`);
                 }
+            } else {
+                console.warn(`[BibleService] Chapter endpoint status ${chapterResponse.status} for ${chapterId}`);
             }
         } catch (error) {
-            console.warn(`[BibleService] API.Bible chapter endpoint failed for ${chapterId}`, error);
+            console.warn(`[BibleService] API.Bible chapter endpoint failed for ${chapterId}:`, error);
         }
 
         try {
@@ -223,6 +232,7 @@ class BibleService {
                 'include-verse-spans': 'false',
                 limit: '500'
             });
+            console.log(`[BibleService] Trying verses endpoint for ${chapterId}`);
             const versesResponse = await fetch(`${this.apiBibleBaseUrl}/bibles/${bibleId}/chapters/${chapterId}/verses?${versesParams.toString()}`, {
                 headers: {
                     'api-key': this.apiBibleKey,
@@ -230,9 +240,13 @@ class BibleService {
                 }
             });
 
-            if (!versesResponse.ok) return null;
+            if (!versesResponse.ok) {
+                console.warn(`[BibleService] Verses endpoint status ${versesResponse.status} for ${chapterId}`);
+                return null;
+            }
             const versesPayload = await versesResponse.json();
             const verses = Array.isArray(versesPayload?.data) ? versesPayload.data : [];
+            console.log(`[BibleService] Verses endpoint got ${verses.length} raw verses for ${chapterId}`);
             const extracted = verses
                 .map((verse: any) => {
                     const candidate = typeof verse?.text === 'string'
@@ -244,9 +258,10 @@ class BibleService {
                 })
                 .filter(Boolean);
 
+            console.log(`[BibleService] Verses endpoint cleaned ${extracted.length} verses for ${chapterId}`);
             return extracted.length > 0 ? extracted : null;
         } catch (error) {
-            console.warn(`[BibleService] API.Bible verses endpoint failed for ${chapterId}`, error);
+            console.warn(`[BibleService] API.Bible verses endpoint failed for ${chapterId}:`, error);
             return null;
         }
     }
