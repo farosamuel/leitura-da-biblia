@@ -53,9 +53,17 @@ class BibleService {
         let fetchedVerses: string[] | null = null;
         let sourceProvider: 'api.bible' | 'abibliadigital' | 'db' | null = null;
 
-        fetchedVerses = await this.fetchFromApiBible(bookAbbrev, chapter, normalizedVersion, bookName);
+        fetchedVerses = await this.getChapterVersesFromDb(bookAbbrev, chapter, normalizedVersion);
         if (fetchedVerses && fetchedVerses.length > 0) {
-            sourceProvider = 'api.bible';
+            sourceProvider = 'db';
+            console.log(`[BibleService] Serving ${cacheKey} from Supabase DB`);
+        }
+
+        if (!fetchedVerses) {
+            fetchedVerses = await this.fetchFromApiBible(bookAbbrev, chapter, normalizedVersion, bookName);
+            if (fetchedVerses && fetchedVerses.length > 0) {
+                sourceProvider = 'api.bible';
+            }
         }
 
         if (!fetchedVerses && normalizedVersion !== this.defaultVersion) {
@@ -82,31 +90,13 @@ class BibleService {
             }
         }
 
-        if (!fetchedVerses) {
-            fetchedVerses = await this.getChapterVersesFromDb(bookAbbrev, chapter, normalizedVersion);
-            if (fetchedVerses) {
-                sourceProvider = 'db';
-                console.log(`[BibleService] Serving ${cacheKey} from Supabase DB`);
-            }
-        }
-
         if (!fetchedVerses || fetchedVerses.length === 0) {
             return [];
         }
 
-        // Note: Database caching is disabled due to RLS constraints.
-        // Memory cache (this.cache) provides sufficient performance for the app.
-        // if (sourceProvider !== 'db') {
-        //     supabase.from('bible_chapters').upsert({
-        //         book: bookAbbrev.toLowerCase(),
-        //         chapter,
-        //         version: normalizedVersion,
-        //         content: fetchedVerses
-        //     }, { onConflict: 'book,chapter,version' }).then(({ error }) => {
-        //         if (error) console.error('Error caching to DB:', error);
-        //         else console.log(`[BibleService] Cached ${cacheKey} to Supabase`);
-        //     });
-        // }
+        if (sourceProvider !== 'db') {
+            this.persistChapterToDb(bookAbbrev, chapter, normalizedVersion, fetchedVerses);
+        }
 
         this.cache.set(cacheKey, fetchedVerses);
         return fetchedVerses;
@@ -535,6 +525,31 @@ class BibleService {
         }
 
         return null;
+    }
+
+    private persistChapterToDb(bookAbbrev: string, chapter: number, version: string, content: string[]): void {
+        if (!content.length) return;
+
+        supabase
+            .from('bible_chapters')
+            .upsert(
+                {
+                    book: bookAbbrev.toLowerCase(),
+                    chapter,
+                    version: version.toLowerCase(),
+                    content
+                },
+                { onConflict: 'book,chapter,version' }
+            )
+            .then(({ error }) => {
+                if (error) {
+                    console.warn('[BibleService] DB cache upsert failed', error);
+                } else {
+                    console.log(
+                        `[BibleService] Cached ${bookAbbrev.toLowerCase()}-${chapter}-${version.toLowerCase()} to Supabase`
+                    );
+                }
+            });
     }
 
     async getPassageVerses(passage: string, version: string = this.defaultVersion): Promise<string[]> {
