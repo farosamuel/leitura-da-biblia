@@ -24,15 +24,19 @@ class BibleService {
     private baseUrl = 'https://www.abibliadigital.com.br/api';
     private apiBibleBaseUrl = 'https://rest.api.bible/v1';
     private defaultVersion = 'nvi'; // Nova Versão Internacional
-    private supportedVersions = ['nvi', 'nvt', 'ol'] as const;
+    private supportedVersions = ['nvi', 'nvt', 'ol', 'blt', 'tftp'] as const;
     private authToken = import.meta.env.VITE_ABIBLIA_TOKEN || '';
     private apiBibleKey = import.meta.env.VITE_API_BIBLE_KEY || '';
-    private apiBibleBibleIdOverrides: Record<'nvi' | 'nvt' | 'ol', string> = {
+    private apiBibleBibleIdOverrides: Record<'nvi' | 'nvt' | 'ol' | 'blt' | 'tftp', string> = {
         nvi: import.meta.env.VITE_API_BIBLE_NVI_ID || '',
         nvt: import.meta.env.VITE_API_BIBLE_NVT_ID || '',
-        ol: import.meta.env.VITE_API_BIBLE_OL_ID || ''
+        ol: import.meta.env.VITE_API_BIBLE_OL_ID || '',
+        blt: import.meta.env.VITE_API_BIBLE_BLT_ID || '',
+        tftp: import.meta.env.VITE_API_BIBLE_TFTP_ID || ''
     };
     private apiBibleBibleIdCache = new Map<string, string>();
+    private apiBibleBooksCache = new Map<string, any[]>();
+    private apiBibleBookIdCache = new Map<string, string | null>();
     private cache = new Map<string, string[]>();
 
     async getChapterVerses(bookAbbrev: string, chapter: number, version: string = this.defaultVersion, bookName?: string): Promise<string[]> {
@@ -52,6 +56,19 @@ class BibleService {
         fetchedVerses = await this.fetchFromApiBible(bookAbbrev, chapter, normalizedVersion, bookName);
         if (fetchedVerses && fetchedVerses.length > 0) {
             sourceProvider = 'api.bible';
+        }
+
+        if (!fetchedVerses && normalizedVersion !== this.defaultVersion) {
+            const hasBookInVersion = await this.hasApiBibleBook(normalizedVersion, bookAbbrev, bookName);
+            if (!hasBookInVersion) {
+                console.warn(
+                    `[BibleService] Version ${normalizedVersion.toUpperCase()} does not include ${bookName || bookAbbrev}. Falling back to ${this.defaultVersion.toUpperCase()}.`
+                );
+                fetchedVerses = await this.fetchFromApiBible(bookAbbrev, chapter, this.defaultVersion, bookName);
+                if (fetchedVerses && fetchedVerses.length > 0) {
+                    sourceProvider = 'api.bible';
+                }
+            }
         }
 
         if (!fetchedVerses) {
@@ -107,7 +124,7 @@ class BibleService {
         const cached = this.apiBibleBibleIdCache.get(normalized);
         if (cached) return cached;
 
-        const overridden = this.apiBibleBibleIdOverrides[normalized as 'nvi' | 'nvt' | 'ol'];
+        const overridden = this.apiBibleBibleIdOverrides[normalized as 'nvi' | 'nvt' | 'ol' | 'blt' | 'tftp'];
         if (overridden) {
             this.apiBibleBibleIdCache.set(normalized, overridden);
             return overridden;
@@ -130,7 +147,9 @@ class BibleService {
             const keywordsByVersion: Record<string, string[]> = {
                 nvi: ['ptnvi', 'nvi', 'nova versao internacional'],
                 nvt: ['nvt', 'nova versao transformadora'],
-                ol: ['ol', 'o livro']
+                ol: ['ol', 'o livro'],
+                blt: ['blt', 'biblia livre para todos', 'bíblia livre para todos'],
+                tftp: ['tftp', 'translation for translators in brasilian portuguese', 'translation for translators']
             };
             const wantedKeywords = keywordsByVersion[normalized] || [normalized];
 
@@ -152,7 +171,7 @@ class BibleService {
         return null;
     }
 
-    private getApiBibleBookId(bookAbbrev: string, bookName?: string): string | null {
+    private getFallbackApiBibleBookId(bookAbbrev: string, bookName?: string): string | null {
         const byAbbrev: Record<string, string> = {
             gn: 'GEN', ex: 'EXO', lv: 'LEV', nm: 'NUM', dt: 'DEU',
             js: 'JOS', jz: 'JDG', rt: 'RUT', '1sm': '1SA', '2sm': '2SA',
@@ -180,11 +199,86 @@ class BibleService {
         return byAbbrev[bookAbbrev.toLowerCase()] || null;
     }
 
+    private async getApiBibleBooks(bibleId: string): Promise<any[]> {
+        const cached = this.apiBibleBooksCache.get(bibleId);
+        if (cached) return cached;
+        if (!this.apiBibleKey) return [];
+
+        try {
+            const response = await fetch(`${this.apiBibleBaseUrl}/bibles/${bibleId}/books`, {
+                headers: {
+                    'api-key': this.apiBibleKey,
+                    Accept: 'application/json'
+                }
+            });
+            if (!response.ok) return [];
+
+            const payload = await response.json();
+            const books = Array.isArray(payload?.data) ? payload.data : [];
+            this.apiBibleBooksCache.set(bibleId, books);
+            return books;
+        } catch (error) {
+            console.warn(`[BibleService] Failed loading books for bibleId=${bibleId}`, error);
+            return [];
+        }
+    }
+
+    private async resolveApiBibleBookId(bibleId: string, bookAbbrev: string, bookName?: string): Promise<string | null> {
+        const normalizedBookName = this.normalizeLookup(bookName || '');
+        const cacheKey = `${bibleId}:${bookAbbrev.toLowerCase()}:${normalizedBookName}`;
+        if (this.apiBibleBookIdCache.has(cacheKey)) {
+            return this.apiBibleBookIdCache.get(cacheKey) || null;
+        }
+
+        const fallbackId = this.getFallbackApiBibleBookId(bookAbbrev, bookName);
+        const books = await this.getApiBibleBooks(bibleId);
+
+        if (books.length === 0) {
+            const fallback = fallbackId || null;
+            this.apiBibleBookIdCache.set(cacheKey, fallback);
+            return fallback;
+        }
+
+        const normalizeRef = (value: unknown) => String(value || '').trim().toUpperCase();
+        const references = [normalizeRef(fallbackId)].filter(Boolean);
+        const byReference = books.find((book: any) => {
+            const id = normalizeRef(book?.id);
+            const abbreviation = normalizeRef(book?.abbreviation);
+            const abbreviationLocal = normalizeRef(book?.abbreviationLocal);
+            return references.some(reference => reference === id || reference === abbreviation || reference === abbreviationLocal);
+        });
+        if (byReference?.id) {
+            this.apiBibleBookIdCache.set(cacheKey, byReference.id);
+            return byReference.id;
+        }
+
+        if (normalizedBookName) {
+            const byName = books.find((book: any) => {
+                const haystack = this.normalizeLookup(`${book?.name || ''} ${book?.nameLocal || ''}`);
+                return haystack.includes(normalizedBookName);
+            });
+            if (byName?.id) {
+                this.apiBibleBookIdCache.set(cacheKey, byName.id);
+                return byName.id;
+            }
+        }
+
+        this.apiBibleBookIdCache.set(cacheKey, null);
+        return null;
+    }
+
+    private async hasApiBibleBook(version: string, bookAbbrev: string, bookName?: string): Promise<boolean> {
+        const bibleId = await this.resolveApiBibleId(version);
+        if (!bibleId) return false;
+        const bookId = await this.resolveApiBibleBookId(bibleId, bookAbbrev, bookName);
+        return !!bookId;
+    }
+
     private async fetchFromApiBible(bookAbbrev: string, chapter: number, version: string, bookName?: string): Promise<string[] | null> {
         if (!this.apiBibleKey) return null;
 
         const bibleId = await this.resolveApiBibleId(version);
-        const bookId = this.getApiBibleBookId(bookAbbrev, bookName);
+        const bookId = bibleId ? await this.resolveApiBibleBookId(bibleId, bookAbbrev, bookName) : null;
         if (!bibleId || !bookId) {
             console.warn(`[BibleService] Missing bibleId or bookId: bibleId=${bibleId}, bookId=${bookId}`);
             return null;
@@ -213,8 +307,13 @@ class BibleService {
                 const chapterPayload = await chapterResponse.json();
                 const parsed = this.extractVersesFromApiBibleContent(chapterPayload?.data?.content);
                 if (parsed && parsed.length > 0) {
-                    console.log(`[BibleService] Chapter endpoint SUCCESS: got ${parsed.length} verses for ${chapterId}`);
-                    return parsed;
+                    if (this.hasUsefulVerseText(parsed)) {
+                        console.log(`[BibleService] Chapter endpoint SUCCESS: got ${parsed.length} verses for ${chapterId}`);
+                        return parsed;
+                    }
+                    console.warn(
+                        `[BibleService] Chapter endpoint returned suspicious content for ${chapterId}; falling back to verses endpoint`
+                    );
                 } else {
                     console.log(`[BibleService] Chapter endpoint returned 0 verses for ${chapterId}`);
                 }
@@ -272,6 +371,8 @@ class BibleService {
             if (!verseNumber || verseNumber < 1) return;
             const cleaned = this.cleanVerseText(text);
             if (!cleaned) return;
+            // Ignore standalone verse numbers coming from structured payload markers.
+            if (/^\d{1,3}$/.test(cleaned)) return;
             if (!verseMap.has(verseNumber)) verseMap.set(verseNumber, []);
             verseMap.get(verseNumber)!.push(cleaned);
         };
@@ -288,8 +389,17 @@ class BibleService {
             }
             if (typeof node !== 'object') return;
 
-            const parsedFromNode = this.parseVerseNumber(node?.verseNumber ?? node?.verse ?? node?.number ?? node?.verse_number);
-            const parsedFromAttrs = this.parseVerseNumber(node?.attrs?.number ?? node?.attrs?.verseNumber ?? node?.attrs?.['data-number']);
+            const parsedFromNode = this.parseVerseNumber(
+                node?.verseNumber ?? node?.verse ?? node?.number ?? node?.verse_number ?? node?.verseId ?? node?.verseOrgIds
+            );
+            const parsedFromAttrs = this.parseVerseNumber(
+                node?.attrs?.number
+                ?? node?.attrs?.verseNumber
+                ?? node?.attrs?.['data-number']
+                ?? node?.attrs?.verseId
+                ?? node?.attrs?.verseOrgIds
+                ?? node?.attrs?.vid
+            );
             const nextVerse = parsedFromNode ?? parsedFromAttrs ?? currentVerseNumber;
 
             if (typeof node.text === 'string') append(nextVerse, node.text);
@@ -337,8 +447,20 @@ class BibleService {
     }
 
     private parseVerseNumber(value: unknown): number | null {
-        const numeric = parseInt(String(value ?? ''), 10);
-        return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+        if (value == null) return null;
+
+        const raw = String(value).trim();
+        if (!raw) return null;
+
+        const numeric = parseInt(raw, 10);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+
+        // API.Bible can expose references like "GEN.16.1" or "GEN 16:8".
+        const trailingNumberMatch = raw.match(/(\d{1,3})(?!.*\d)/);
+        if (!trailingNumberMatch) return null;
+
+        const parsed = parseInt(trailingNumberMatch[1], 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
     private normalizeLookup(value: string): string {
@@ -352,8 +474,28 @@ class BibleService {
 
     private cleanVerseText(value: string): string {
         return value
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/\u00a0/g, ' ')
+            // Remove API.Bible reference markers like "PRO.2.1" injected in some chapter payloads.
+            .replace(/\b[A-Z0-9]{2,5}\.\d{1,3}\.\d{1,3}\b/g, ' ')
+            // Remove extra spaces before punctuation after marker cleanup.
+            .replace(/\s+([,.;:!?])/g, '$1')
             .replace(/\s+/g, ' ')
             .trim();
+    }
+
+    private hasUsefulVerseText(verses: string[]): boolean {
+        if (verses.length === 0) return false;
+        const numericOnlyCount = verses.filter(v => /^\d{1,3}$/.test(v.trim())).length;
+        const withLettersCount = verses.filter(v => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(v)).length;
+        if (withLettersCount === 0) return false;
+        return (numericOnlyCount / verses.length) < 0.3;
     }
 
     private async fetchFromAbibliaDigital(bookAbbrev: string, chapter: number, version: string): Promise<string[] | null> {
