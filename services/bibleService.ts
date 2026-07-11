@@ -22,13 +22,13 @@ export interface BibleChapter {
 
 class BibleService {
     private baseUrl = 'https://www.abibliadigital.com.br/api';
-    private apiBibleBaseUrl = 'https://rest.api.bible/v1';
+    private apiBibleBaseUrl = '/api-bible/v1';
     private defaultVersion = 'nvi'; // Nova Versão Internacional
     private supportedVersions = ['nvi', 'nvt', 'ol', 'blt', 'tftp'] as const;
     private authToken = import.meta.env.VITE_ABIBLIA_TOKEN || '';
     private apiBibleKey = import.meta.env.VITE_API_BIBLE_KEY || '';
     private apiBibleBibleIdOverrides: Record<'nvi' | 'nvt' | 'ol' | 'blt' | 'tftp', string> = {
-        nvi: import.meta.env.VITE_API_BIBLE_NVI_ID || '',
+        nvi: import.meta.env.VITE_API_BIBLE_NVI_ID || '35b94e98b2e3a01a-01',
         nvt: import.meta.env.VITE_API_BIBLE_NVT_ID || '',
         ol: import.meta.env.VITE_API_BIBLE_OL_ID || '',
         blt: import.meta.env.VITE_API_BIBLE_BLT_ID || '',

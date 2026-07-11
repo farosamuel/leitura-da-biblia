@@ -12,6 +12,7 @@ const Dashboard: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [completedDays, setCompletedDays] = useState(0);
+  const [firstUnreadDay, setFirstUnreadDay] = useState(currentDay);
   const [topReaders, setTopReaders] = useState<{ name: string, days: number }[]>([]);
   const [weeklyProgress, setWeeklyProgress] = useState<boolean[]>(new Array(7).fill(false));
   const totalDays = readingPlanService.getTotalDays();
@@ -50,14 +51,18 @@ const Dashboard: React.FC = () => {
 
         // Fetch progress in background/parallel or after profile
         // Fetch progress for this user (Total count)
-        const { count, error } = await supabase
+        const { data: readDaysData, count, error } = await supabase
           .from('reading_progress')
-          .select('*', { count: 'exact', head: true })
+          .select('day_number', { count: 'exact' })
           .eq('user_id', session.user.id)
           .eq('is_read', true);
 
         if (!error && count !== null) {
           setCompletedDays(count);
+          const readDays = new Set(readDaysData?.map(d => d.day_number) || []);
+          let unread = 1;
+          while(readDays.has(unread) && unread < 365) unread++;
+          setFirstUnreadDay(unread);
         }
 
         // Fetch progress for this week
@@ -159,13 +164,22 @@ const Dashboard: React.FC = () => {
                     Tempo estimado: {todayPlan?.estimatedTime}
                   </div>
                 </div>
-                <button
-                  onClick={() => navigate('/reading')}
-                  className="bg-primary hover:bg-primary-600 text-white px-8 py-4 rounded-2xl font-black shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all flex items-center gap-3 w-full md:w-auto justify-center active:scale-[0.98] group/btn"
-                >
-                  <span className="material-symbols-outlined group-hover:rotate-12 transition-transform">auto_stories</span>
-                  COMEÇAR LEITURA
-                </button>
+                <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+                  <button
+                    onClick={() => navigate(`/reading?day=${firstUnreadDay}`)}
+                    className="bg-primary hover:bg-primary-600 text-white px-6 py-4 rounded-2xl font-black shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all flex items-center gap-3 w-full justify-center active:scale-[0.98] group/btn"
+                  >
+                    <span className="material-symbols-outlined group-hover:rotate-12 transition-transform">auto_stories</span>
+                    CONTINUAR (DIA {firstUnreadDay})
+                  </button>
+                  <button
+                    onClick={() => navigate(`/reading?day=${currentDay}`)}
+                    className="bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-white px-6 py-4 rounded-2xl font-black transition-all flex items-center gap-3 w-full justify-center active:scale-[0.98]"
+                  >
+                    <span className="material-symbols-outlined">today</span>
+                    IR PARA HOJE
+                  </button>
+                </div>
               </div>
               <div className="bg-slate-50 dark:bg-zinc-800/40 rounded-3xl p-6 border border-slate-100 dark:border-zinc-800 group-focus-within/card:border-primary/30 transition-colors">
                 <h5 className="text-xs font-black text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-widest">

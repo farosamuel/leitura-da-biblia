@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { gemini } from '../services/geminiService';
 import { bibleService } from '../services/bibleService';
 import { readingPlanService, ReadingPlanDay } from '../services/readingPlanService';
@@ -17,9 +17,12 @@ interface Highlight {
 }
 
 const ReadingView: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const initialDay = parseInt(searchParams.get('day') || '') || readingPlanService.getCurrentDay();
+
   const [session, setSession] = useState<any>(null);
-  const [currentDay, setCurrentDay] = useState(readingPlanService.getCurrentDay());
-  const [dayData, setDayData] = useState<ReadingPlanDay | undefined>(readingPlanService.getPlanForDay(readingPlanService.getCurrentDay()));
+  const [currentDay, setCurrentDay] = useState(initialDay);
+  const [dayData, setDayData] = useState<ReadingPlanDay | undefined>(readingPlanService.getPlanForDay(initialDay));
   const [verses, setVerses] = useState<string[]>([]);
   const [chapterStarts, setChapterStarts] = useState<Record<number, number>>({});
   const [verseDisplayNumbers, setVerseDisplayNumbers] = useState<Record<number, number>>({});
@@ -405,15 +408,30 @@ const ReadingView: React.FC = () => {
           <button
             onClick={() => navigateDay('prev')}
             disabled={currentDay <= 1}
-            className="size-10 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+            className="size-10 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all shrink-0"
           >
             <span className="material-symbols-outlined pointer-events-none">chevron_left</span>
           </button>
-          <span className="text-sm font-black text-slate-700 tracking-tight">DIA {currentDay} DE {readingPlanService.getTotalDays()}</span>
+          
+          <div className="relative flex items-center justify-center flex-1 md:flex-none">
+            <select
+              value={currentDay}
+              onChange={(e) => setCurrentDay(parseInt(e.target.value))}
+              className="appearance-none bg-transparent text-sm font-black text-slate-700 dark:text-white tracking-tight cursor-pointer hover:text-primary transition-colors outline-none text-center pl-2 pr-6 py-2"
+            >
+              {Array.from({ length: readingPlanService.getTotalDays() }).map((_, i) => (
+                <option key={i + 1} value={i + 1} className="text-slate-900">
+                  DIA {i + 1} DE {readingPlanService.getTotalDays()}
+                </option>
+              ))}
+            </select>
+            <span className="material-symbols-outlined absolute right-0 pointer-events-none text-[18px] text-slate-400">expand_more</span>
+          </div>
+
           <button
             onClick={() => navigateDay('next')}
             disabled={currentDay >= readingPlanService.getTotalDays()}
-            className="size-10 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+            className="size-10 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all shrink-0"
           >
             <span className="material-symbols-outlined pointer-events-none">chevron_right</span>
           </button>
@@ -456,7 +474,7 @@ const ReadingView: React.FC = () => {
 
             <article className="prose prose-slate prose-lg max-w-none min-h-[400px]">
               <div className="space-y-6">
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white border-l-4 border-primary pl-4">{dayData?.book} {dayData?.passage.split(' ')[1]}</h3>
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white border-l-4 border-primary pl-4">{dayData?.passage}</h3>
 
                 {loading ? (
                   <div className="space-y-4 animate-pulse pt-4">

@@ -8,6 +8,14 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/api-bible': {
+            target: 'https://rest.api.bible',
+            changeOrigin: true,
+            rewrite: (path: string) => path.replace(/^\/api-bible/, ''),
+            secure: true,
+          },
+        },
       },
       plugins: [react()],
       define: {
